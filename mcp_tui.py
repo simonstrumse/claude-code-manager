@@ -290,15 +290,16 @@ class MCPManagerApp(App):
         table.cursor_type = "row"
         table.zebra_stripes = True
 
-        # Clear existing data
-        table.clear(columns=True)
-
-        # Add columns
-        table.add_column("Project", key="name", width=30)
-        table.add_column("Git", key="git", width=5)
-        table.add_column("MCP", key="mcp", width=5)
-        table.add_column("Servers", key="servers", width=8)
-        table.add_column("Config", key="config", width=8)
+        # Only add columns if table is empty (first load)
+        # For refresh: only clear rows, preserve column structure
+        if not table.columns:
+            table.add_column("Project", key="name", width=30)
+            table.add_column("Git", key="git", width=5)
+            table.add_column("MCP", key="mcp", width=5)
+            table.add_column("Servers", key="servers", width=8)
+            table.add_column("Config", key="config", width=8)
+        else:
+            table.clear()  # Clear rows only, not columns
 
         # Add rows
         for project in self.projects:
@@ -332,15 +333,16 @@ class MCPManagerApp(App):
         table.cursor_type = "row"
         table.zebra_stripes = True
 
-        # Clear existing data
-        table.clear(columns=True)
-
-        # Add columns
-        table.add_column("Server", key="name", width=20)
-        table.add_column("Type", key="type", width=6)
-        table.add_column("Usage", key="usage", width=6)
-        table.add_column("Bar", key="bar", width=18)
-        table.add_column("Projects", key="projects", width=30)
+        # Only add columns if table is empty (first load)
+        # For refresh: only clear rows, preserve column structure
+        if not table.columns:
+            table.add_column("Server", key="name", width=20)
+            table.add_column("Type", key="type", width=6)
+            table.add_column("Usage", key="usage", width=6)
+            table.add_column("Bar", key="bar", width=18)
+            table.add_column("Projects", key="projects", width=30)
+        else:
+            table.clear()  # Clear rows only, not columns
 
         if not self.server_usages:
             return

@@ -1,14 +1,21 @@
 """
 Enhanced scanner for MCP Server Manager.
 Scans directories for projects, git status, and MCP configurations.
+Includes comprehensive scanning for Skills, Rules, CLAUDE.md, and Hooks.
 """
 
 import json
 import os
+import re
+import glob as glob_module
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
-from mcp_data import ProjectInfo, ServerDetail
+from mcp_data import (
+    ProjectInfo, ServerDetail,
+    MCPServerConfig, SkillInfo, RuleInfo, ClaudeMdInfo, HookInfo, SettingsInfo,
+    EnhancedProjectInfo
+)
 
 
 # Project markers for smart detection mode
@@ -236,5 +243,567 @@ def scan_for_overview(
         List of ProjectInfo sorted by name
     """
     scanner = EnhancedScanner()
+    projects = scanner.scan_directory(directory, max_depth, mode)
+    return sorted(projects, key=lambda p: p.name.lower())
+
+
+# =============================================================================
+# COMPREHENSIVE SCANNER
+# =============================================================================
+
+# Configuration file locations
+ENTERPRISE_PATHS = {
+    'darwin': '/Library/Application Support/ClaudeCode',  # macOS
+    'linux': '/etc/claude-code',
+}
+
+USER_PATHS = {
+    'claude_json': Path.home() / '.claude.json',
+    'claude_dir': Path.home() / '.claude',
+    'skills': Path.home() / '.claude' / 'skills',
+    'rules': Path.home() / '.claude' / 'rules',
+    'settings': Path.home() / '.claude' / 'settings.json',
+    'claude_md': Path.home() / '.claude' / 'CLAUDE.md',
+}
+
+
+class ComprehensiveScanner:
+    """
+    Comprehensive scanner for ALL Claude Code configuration.
+    Scans for MCP servers, Skills, Rules, CLAUDE.md files, and Hooks
+    at all levels (Enterprise, User, Project, Local).
+    """
+
+    def __init__(self):
+        # Cached user-level data (loaded once)
+        self._user_mcp_servers: Dict[str, MCPServerConfig] = {}
+        self._user_mcp_by_project: Dict[str, Dict[str, MCPServerConfig]] = {}
+        self._user_skills: List[SkillInfo] = []
+        self._user_rules: List[RuleInfo] = []
+        self._user_claude_md: Optional[ClaudeMdInfo] = None
+        self._user_hooks: List[HookInfo] = []
+        self._user_settings: Optional[SettingsInfo] = None
+
+        # Cached enterprise data
+        self._enterprise_mcp: Dict[str, MCPServerConfig] = {}
+        self._enterprise_claude_md: Optional[ClaudeMdInfo] = None
+
+        self._loaded = False
+
+    def _ensure_loaded(self) -> None:
+        """Load user and enterprise level data (once)."""
+        if self._loaded:
+            return
+
+        self._loaded = True
+        self._load_user_level()
+        self._load_enterprise_level()
+
+    def _load_user_level(self) -> None:
+        """Load all user-level configuration."""
+        # Load ~/.claude.json for MCP servers
+        if USER_PATHS['claude_json'].exists():
+            try:
+                with open(USER_PATHS['claude_json'], 'r') as f:
+                    data = json.load(f)
+
+                # Global MCP servers
+                for name, config in data.get('mcpServers', {}).items():
+                    self._user_mcp_servers[name] = MCPServerConfig.from_config(
+                        name, config, level='user',
+                        source_file=str(USER_PATHS['claude_json'])
+                    )
+
+                # Per-project local MCP servers
+                for project_path, project_data in data.get('projects', {}).items():
+                    self._user_mcp_by_project[project_path] = {}
+                    for name, config in project_data.get('mcpServers', {}).items():
+                        self._user_mcp_by_project[project_path][name] = MCPServerConfig.from_config(
+                            name, config, level='local',
+                            source_file=str(USER_PATHS['claude_json'])
+                        )
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Load user skills
+        if USER_PATHS['skills'].is_dir():
+            self._user_skills = self._scan_skills_directory(
+                USER_PATHS['skills'], level='personal'
+            )
+
+        # Load user rules
+        if USER_PATHS['rules'].is_dir():
+            self._user_rules = self._scan_rules_directory(
+                USER_PATHS['rules'], level='user'
+            )
+
+        # Load user CLAUDE.md
+        if USER_PATHS['claude_md'].exists():
+            self._user_claude_md = self._parse_claude_md(
+                USER_PATHS['claude_md'], level='user'
+            )
+
+        # Load user settings (for hooks)
+        if USER_PATHS['settings'].exists():
+            self._user_settings, self._user_hooks = self._parse_settings_file(
+                USER_PATHS['settings'], level='user'
+            )
+
+    def _load_enterprise_level(self) -> None:
+        """Load enterprise-level configuration."""
+        import sys
+        platform = sys.platform
+
+        enterprise_dir = ENTERPRISE_PATHS.get(platform)
+        if not enterprise_dir:
+            return
+
+        enterprise_path = Path(enterprise_dir)
+        if not enterprise_path.exists():
+            return
+
+        # Enterprise MCP
+        mcp_file = enterprise_path / 'managed-mcp.json'
+        if mcp_file.exists():
+            try:
+                with open(mcp_file, 'r') as f:
+                    data = json.load(f)
+                for name, config in data.get('mcpServers', {}).items():
+                    self._enterprise_mcp[name] = MCPServerConfig.from_config(
+                        name, config, level='enterprise',
+                        source_file=str(mcp_file)
+                    )
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Enterprise CLAUDE.md
+        claude_md_file = enterprise_path / 'CLAUDE.md'
+        if claude_md_file.exists():
+            self._enterprise_claude_md = self._parse_claude_md(
+                claude_md_file, level='enterprise'
+            )
+
+    def scan_directory(
+        self,
+        directory: str,
+        max_depth: int = 2,
+        mode: Literal["all", "smart"] = "all"
+    ) -> List[EnhancedProjectInfo]:
+        """
+        Scan directory for projects with comprehensive configuration.
+
+        Returns:
+            List of EnhancedProjectInfo with all config data
+        """
+        self._ensure_loaded()
+
+        directory = os.path.expanduser(directory)
+        directory = os.path.abspath(directory)
+
+        if not os.path.isdir(directory):
+            return []
+
+        projects: List[EnhancedProjectInfo] = []
+
+        try:
+            entries = os.listdir(directory)
+        except PermissionError:
+            return []
+
+        for entry in sorted(entries):
+            entry_path = os.path.join(directory, entry)
+
+            if not os.path.isdir(entry_path):
+                continue
+
+            if entry.startswith(".") and entry not in PROJECT_MARKERS:
+                continue
+
+            if entry in SKIP_DIRS:
+                continue
+
+            if mode == "smart" and not self._is_project_folder(entry_path):
+                if max_depth > 1:
+                    nested = self.scan_directory(entry_path, max_depth - 1, mode)
+                    projects.extend(nested)
+                continue
+
+            project = self._analyze_project_comprehensive(entry_path)
+            projects.append(project)
+
+        return projects
+
+    def _is_project_folder(self, path: str) -> bool:
+        """Check if a folder looks like a project."""
+        try:
+            entries = set(os.listdir(path))
+        except PermissionError:
+            return False
+        return bool(entries & PROJECT_MARKERS)
+
+    def _analyze_project_comprehensive(self, path: str) -> EnhancedProjectInfo:
+        """Analyze a project for ALL Claude Code configuration."""
+        name = os.path.basename(path)
+        has_git = os.path.isdir(os.path.join(path, ".git"))
+
+        project = EnhancedProjectInfo(
+            name=name,
+            path=path,
+            has_git=has_git
+        )
+
+        # --- MCP SERVERS ---
+        # 1. Enterprise (highest priority)
+        for server in self._enterprise_mcp.values():
+            project.mcp_servers.append(server)
+
+        # 2. Local (from ~/.claude.json projects[path])
+        if path in self._user_mcp_by_project:
+            for server in self._user_mcp_by_project[path].values():
+                project.mcp_servers.append(server)
+
+        # 3. Project (.mcp.json)
+        project_mcp = self._load_project_mcp(path)
+        project.mcp_servers.extend(project_mcp)
+
+        # 4. User global (if not overridden)
+        existing_names = {s.name for s in project.mcp_servers}
+        for name, server in self._user_mcp_servers.items():
+            if name not in existing_names:
+                project.mcp_servers.append(server)
+
+        # --- SKILLS ---
+        # Project skills
+        project_skills_dir = Path(path) / '.claude' / 'skills'
+        if project_skills_dir.is_dir():
+            project.skills = self._scan_skills_directory(
+                project_skills_dir, level='project'
+            )
+
+        # Add user skills (available to all projects)
+        project.skills.extend(self._user_skills)
+
+        # --- RULES ---
+        # Project rules
+        project_rules_dir = Path(path) / '.claude' / 'rules'
+        if project_rules_dir.is_dir():
+            project.rules = self._scan_rules_directory(
+                project_rules_dir, level='project'
+            )
+
+        # Add user rules
+        project.rules.extend(self._user_rules)
+
+        # --- CLAUDE.MD ---
+        # Project root CLAUDE.md
+        for claude_md_name in ['CLAUDE.md', '.claude/CLAUDE.md']:
+            claude_md_path = Path(path) / claude_md_name
+            if claude_md_path.exists():
+                project.claude_mds.append(
+                    self._parse_claude_md(claude_md_path, level='project')
+                )
+
+        # CLAUDE.local.md
+        local_claude_md = Path(path) / 'CLAUDE.local.md'
+        if local_claude_md.exists():
+            project.claude_mds.append(
+                self._parse_claude_md(local_claude_md, level='local')
+            )
+
+        # Subdirectory CLAUDE.md files (scan common subdirs)
+        for subdir_claude_md in Path(path).glob('**/CLAUDE.md'):
+            if subdir_claude_md.parent != Path(path) and '.claude' not in str(subdir_claude_md):
+                rel_dir = str(subdir_claude_md.parent.relative_to(path))
+                if not any(skip in rel_dir for skip in SKIP_DIRS):
+                    info = self._parse_claude_md(subdir_claude_md, level='subdirectory')
+                    info.relative_dir = rel_dir
+                    project.claude_mds.append(info)
+
+        # Add user CLAUDE.md
+        if self._user_claude_md:
+            project.claude_mds.append(self._user_claude_md)
+
+        # Add enterprise CLAUDE.md
+        if self._enterprise_claude_md:
+            project.claude_mds.append(self._enterprise_claude_md)
+
+        # --- HOOKS & SETTINGS ---
+        # Project settings
+        for settings_name, level in [
+            ('.claude/settings.json', 'project'),
+            ('.claude/settings.local.json', 'local'),
+        ]:
+            settings_path = Path(path) / settings_name
+            if settings_path.exists():
+                settings_info, hooks = self._parse_settings_file(settings_path, level)
+                if settings_info:
+                    project.settings.append(settings_info)
+                project.hooks.extend(hooks)
+
+        # Add user hooks
+        project.hooks.extend(self._user_hooks)
+
+        # Add user settings
+        if self._user_settings:
+            project.settings.append(self._user_settings)
+
+        return project
+
+    def _load_project_mcp(self, path: str) -> List[MCPServerConfig]:
+        """Load MCP servers from project .mcp.json."""
+        servers = []
+        mcp_file = Path(path) / '.mcp.json'
+
+        if mcp_file.exists():
+            try:
+                with open(mcp_file, 'r') as f:
+                    data = json.load(f)
+                for name, config in data.get('mcpServers', {}).items():
+                    servers.append(MCPServerConfig.from_config(
+                        name, config, level='project',
+                        source_file=str(mcp_file)
+                    ))
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        return servers
+
+    def _scan_skills_directory(
+        self,
+        skills_dir: Path,
+        level: Literal["enterprise", "personal", "project", "plugin"]
+    ) -> List[SkillInfo]:
+        """Scan a skills directory for SKILL.md files."""
+        skills = []
+
+        if not skills_dir.is_dir():
+            return skills
+
+        for skill_folder in skills_dir.iterdir():
+            if not skill_folder.is_dir():
+                continue
+
+            skill_md = skill_folder / 'SKILL.md'
+            if not skill_md.exists():
+                continue
+
+            skill = self._parse_skill_md(skill_md, level)
+            if skill:
+                skills.append(skill)
+
+        return skills
+
+    def _parse_skill_md(
+        self,
+        path: Path,
+        level: Literal["enterprise", "personal", "project", "plugin"]
+    ) -> Optional[SkillInfo]:
+        """Parse a SKILL.md file."""
+        try:
+            content = path.read_text(encoding='utf-8')
+        except IOError:
+            return None
+
+        # Parse YAML frontmatter
+        frontmatter, body = self._parse_frontmatter(content)
+
+        name = frontmatter.get('name', path.parent.name)
+        description = frontmatter.get('description', '')
+        allowed_tools_str = frontmatter.get('allowed-tools', '')
+        allowed_tools = [t.strip() for t in allowed_tools_str.split(',') if t.strip()]
+        model = frontmatter.get('model')
+
+        return SkillInfo(
+            name=name,
+            description=description[:200] if description else '',
+            level=level,
+            path=str(path),
+            allowed_tools=allowed_tools,
+            model=model
+        )
+
+    def _scan_rules_directory(
+        self,
+        rules_dir: Path,
+        level: Literal["user", "project"]
+    ) -> List[RuleInfo]:
+        """Scan a rules directory for .md files."""
+        rules = []
+
+        if not rules_dir.is_dir():
+            return rules
+
+        # Recursively find all .md files
+        for md_file in rules_dir.rglob('*.md'):
+            rule = self._parse_rule_md(md_file, level)
+            if rule:
+                rules.append(rule)
+
+        return rules
+
+    def _parse_rule_md(
+        self,
+        path: Path,
+        level: Literal["user", "project"]
+    ) -> Optional[RuleInfo]:
+        """Parse a rule .md file."""
+        try:
+            content = path.read_text(encoding='utf-8')
+        except IOError:
+            return None
+
+        frontmatter, body = self._parse_frontmatter(content)
+
+        name = path.stem  # Filename without extension
+        paths_glob = frontmatter.get('paths')
+
+        # Get content preview (first 200 chars of body)
+        content_preview = body.strip()[:200] if body else ''
+
+        return RuleInfo(
+            name=name,
+            level=level,
+            path=str(path),
+            paths_glob=paths_glob,
+            content_preview=content_preview
+        )
+
+    def _parse_claude_md(
+        self,
+        path: Path,
+        level: Literal["enterprise", "project", "local", "subdirectory", "user"]
+    ) -> ClaudeMdInfo:
+        """Parse a CLAUDE.md file."""
+        content = ''
+        try:
+            content = path.read_text(encoding='utf-8')
+        except IOError:
+            pass
+
+        frontmatter, body = self._parse_frontmatter(content)
+
+        # Check for @imports
+        has_imports = bool(re.search(r'@[~/\w]', body)) if body else False
+
+        paths_glob = frontmatter.get('paths')
+        content_preview = body.strip()[:200] if body else ''
+
+        return ClaudeMdInfo(
+            level=level,
+            path=str(path),
+            has_imports=has_imports,
+            paths_glob=paths_glob,
+            content_preview=content_preview
+        )
+
+    def _parse_settings_file(
+        self,
+        path: Path,
+        level: Literal["enterprise", "user", "project", "local"]
+    ) -> Tuple[Optional[SettingsInfo], List[HookInfo]]:
+        """Parse a settings.json file for settings and hooks."""
+        hooks = []
+        settings_info = None
+
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None, []
+
+        # Parse permissions
+        permissions = data.get('permissions', {})
+        allow = permissions.get('allow', [])
+        deny = permissions.get('deny', [])
+
+        # Parse MCP server lists
+        enabled_mcp = data.get('enabledMcpjsonServers', [])
+        disabled_mcp = data.get('disabledMcpjsonServers', [])
+
+        # Parse hooks
+        hooks_data = data.get('hooks', {})
+        hooks_count = 0
+
+        for event, event_hooks in hooks_data.items():
+            if isinstance(event_hooks, list):
+                for hook_entry in event_hooks:
+                    matcher = hook_entry.get('matcher')
+                    for hook in hook_entry.get('hooks', []):
+                        hook_type = hook.get('type', 'command')
+                        hooks.append(HookInfo(
+                            event=event,
+                            hook_type=hook_type,
+                            source_file=str(path),
+                            matcher=matcher,
+                            command=hook.get('command'),
+                            prompt=hook.get('prompt'),
+                            timeout=hook.get('timeout')
+                        ))
+                        hooks_count += 1
+
+        settings_info = SettingsInfo(
+            level=level,
+            path=str(path),
+            permissions_allow=allow if isinstance(allow, list) else [],
+            permissions_deny=deny if isinstance(deny, list) else [],
+            enabled_mcp_servers=enabled_mcp if isinstance(enabled_mcp, list) else [],
+            disabled_mcp_servers=disabled_mcp if isinstance(disabled_mcp, list) else [],
+            hooks_count=hooks_count,
+            custom_model=data.get('model')
+        )
+
+        return settings_info, hooks
+
+    def _parse_frontmatter(self, content: str) -> Tuple[Dict, str]:
+        """Parse YAML frontmatter from content."""
+        if not content.startswith('---'):
+            return {}, content
+
+        # Find closing ---
+        end_match = re.search(r'\n---\s*\n', content[3:])
+        if not end_match:
+            return {}, content
+
+        frontmatter_text = content[3:end_match.start() + 3]
+        body = content[end_match.end() + 3:]
+
+        # Simple YAML parsing (key: value)
+        frontmatter = {}
+        for line in frontmatter_text.split('\n'):
+            if ':' in line:
+                key, _, value = line.partition(':')
+                frontmatter[key.strip()] = value.strip()
+
+        return frontmatter, body
+
+    # Convenience methods
+    def get_user_skills(self) -> List[SkillInfo]:
+        """Get all user-level skills."""
+        self._ensure_loaded()
+        return self._user_skills
+
+    def get_user_rules(self) -> List[RuleInfo]:
+        """Get all user-level rules."""
+        self._ensure_loaded()
+        return self._user_rules
+
+    def get_user_mcp_servers(self) -> List[MCPServerConfig]:
+        """Get all user-level MCP servers."""
+        self._ensure_loaded()
+        return list(self._user_mcp_servers.values())
+
+
+def scan_comprehensive(
+    directory: str,
+    mode: Literal["all", "smart"] = "all",
+    max_depth: int = 2
+) -> List[EnhancedProjectInfo]:
+    """
+    Convenience function to scan with comprehensive configuration.
+
+    Returns:
+        List of EnhancedProjectInfo sorted by name
+    """
+    scanner = ComprehensiveScanner()
     projects = scanner.scan_directory(directory, max_depth, mode)
     return sorted(projects, key=lambda p: p.name.lower())
