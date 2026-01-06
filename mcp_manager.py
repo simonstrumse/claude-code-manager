@@ -426,6 +426,118 @@ class MCPServerManager:
                           f"({Colors.GREEN}{counts['enabled']}{Colors.RESET}/"
                           f"{Colors.RED}{counts['disabled']}{Colors.RESET})")
     
+    @staticmethod
+    def scan_directory(directory: str, detailed: bool = False, max_depth: int = 2) -> None:
+        """Scan a directory for all projects with MCP configurations"""
+        directory = os.path.expanduser(directory)
+        directory = os.path.abspath(directory)
+
+        if not os.path.isdir(directory):
+            print(f"{Colors.RED}Error: '{directory}' is not a valid directory{Colors.RESET}")
+            return
+
+        print(f"\n{Colors.BOLD}Scanning for MCP configurations{Colors.RESET}")
+        print(f"{Colors.DIM}Directory: {directory}{Colors.RESET}")
+        print(f"{Colors.DIM}Max depth: {max_depth}{Colors.RESET}")
+        print("-" * 80)
+
+        # Find all .mcp.json and .claude/settings.json files
+        projects = []
+
+        for root, dirs, files in os.walk(directory):
+            # Calculate depth
+            depth = root[len(directory):].count(os.sep)
+            if depth >= max_depth:
+                dirs[:] = []  # Don't descend further
+                continue
+
+            # Skip hidden directories and common non-project dirs
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', 'venv', '__pycache__', '.git']]
+
+            # Check for MCP config files
+            mcp_file = os.path.join(root, '.mcp.json')
+            claude_settings = os.path.join(root, '.claude', 'settings.json')
+
+            config_file = None
+            if os.path.exists(mcp_file):
+                config_file = mcp_file
+            elif os.path.exists(claude_settings):
+                config_file = claude_settings
+
+            if config_file:
+                try:
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+
+                    servers = config.get('mcpServers', {})
+                    server_names = list(servers.keys())
+
+                    projects.append({
+                        'name': os.path.basename(root),
+                        'path': root,
+                        'config_file': config_file,
+                        'servers': server_names,
+                        'count': len(server_names)
+                    })
+                except Exception as e:
+                    projects.append({
+                        'name': os.path.basename(root),
+                        'path': root,
+                        'config_file': config_file,
+                        'servers': [],
+                        'count': 0,
+                        'error': str(e)
+                    })
+
+        if not projects:
+            print(f"\n{Colors.YELLOW}No projects with MCP configurations found{Colors.RESET}")
+            return
+
+        # Sort by project name
+        projects.sort(key=lambda p: p['name'].lower())
+
+        # Collect stats
+        all_servers = defaultdict(int)
+        total_projects = len(projects)
+        total_servers = 0
+
+        print(f"\n{Colors.BOLD}Found {total_projects} projects with MCP configs:{Colors.RESET}\n")
+
+        for project in projects:
+            name = project['name']
+            count = project['count']
+            total_servers += count
+
+            # Count server usage
+            for server in project['servers']:
+                all_servers[server] += 1
+
+            # Display project
+            if 'error' in project:
+                print(f"📁 {Colors.RED}{name}{Colors.RESET} ({Colors.RED}error: {project['error']}{Colors.RESET})")
+            else:
+                color = Colors.GREEN if count > 0 else Colors.DIM
+                print(f"📁 {Colors.BOLD}{name}{Colors.RESET} ({color}{count} servers{Colors.RESET})")
+
+                if detailed and project['servers']:
+                    servers_str = ', '.join(project['servers'])
+                    print(f"   {Colors.DIM}└─ {servers_str}{Colors.RESET}")
+
+        # Summary
+        print("\n" + "-" * 80)
+        print(f"{Colors.BOLD}Summary:{Colors.RESET}")
+        print(f"  Projects: {total_projects}")
+        print(f"  Total server configs: {total_servers}")
+
+        if all_servers:
+            print(f"\n{Colors.BOLD}Most common servers:{Colors.RESET}")
+            sorted_servers = sorted(all_servers.items(), key=lambda x: (-x[1], x[0]))
+            for server, count in sorted_servers[:10]:
+                bar_len = int((count / total_projects) * 20)
+                bar = "█" * bar_len + "░" * (20 - bar_len)
+                pct = int((count / total_projects) * 100)
+                print(f"  {Colors.CYAN}{server:20}{Colors.RESET} {bar} {count}/{total_projects} ({pct}%)")
+
     def interactive_mode(self):
         """Interactive mode for toggling servers"""
         servers = self.get_all_servers()
@@ -570,7 +682,16 @@ Current directory: {cwd}
     
     # Interactive mode
     subparsers.add_parser('interactive', help='Interactive selection mode')
-    
+
+    # Scan command
+    scan_parser = subparsers.add_parser('scan', help='Scan directory for all project MCP configs')
+    scan_parser.add_argument('directory', nargs='?', default='.',
+                            help='Directory to scan (default: current directory)')
+    scan_parser.add_argument('-d', '--detailed', action='store_true',
+                            help='Show server names for each project')
+    scan_parser.add_argument('--depth', type=int, default=2,
+                            help='Max depth to scan (default: 2)')
+
     args = parser.parse_args()
     
     # Initialize manager
@@ -604,6 +725,13 @@ Current directory: {cwd}
     
     elif args.command == 'interactive':
         manager.interactive_mode()
+
+    elif args.command == 'scan':
+        MCPServerManager.scan_directory(
+            args.directory,
+            detailed=args.detailed,
+            max_depth=args.depth
+        )
 
 if __name__ == '__main__':
     main()
