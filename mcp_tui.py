@@ -11,15 +11,11 @@ from textual.containers import Container, Horizontal, Vertical, ScrollableContai
 from textual.widgets import (
     DataTable,
     Footer,
-    Header,
     Static,
     TabbedContent,
     TabPane,
-    Tree,
-    Label,
-    Rule,
 )
-from textual.widgets.tree import TreeNode
+from textual.reactive import reactive
 from rich.text import Text
 
 from mcp_data import ProjectInfo, ServerDetail, ServerUsage, compute_server_usages
@@ -27,35 +23,44 @@ from mcp_scanner import EnhancedScanner
 from mcp_config import UserConfig, load_config, save_config
 
 
-ASCII_HEADER = """
-[bold cyan] ███╗   ███╗ ██████╗██████╗    ███╗   ███╗ █████╗ ███╗   ██╗ █████╗  ██████╗ ███████╗██████╗ [/]
-[bold cyan] ████╗ ████║██╔════╝██╔══██╗   ████╗ ████║██╔══██╗████╗  ██║██╔══██╗██╔════╝ ██╔════╝██╔══██╗[/]
-[bold cyan] ██╔████╔██║██║     ██████╔╝   ██╔████╔██║███████║██╔██╗ ██║███████║██║  ███╗█████╗  ██████╔╝[/]
-[bold cyan] ██║╚██╔╝██║██║     ██╔═══╝    ██║╚██╔╝██║██╔══██║██║╚██╗██║██╔══██║██║   ██║██╔══╝  ██╔══██╗[/]
-[bold cyan] ██║ ╚═╝ ██║╚██████╗██║        ██║ ╚═╝ ██║██║  ██║██║ ╚████║██║  ██║╚██████╔╝███████╗██║  ██║[/]
-[bold cyan] ╚═╝     ╚═╝ ╚═════╝╚═╝        ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝[/]
+ASCII_HEADER = """[bold cyan]
+ ███╗   ███╗ ██████╗██████╗    ███╗   ███╗ █████╗ ███╗   ██╗ █████╗  ██████╗ ███████╗██████╗
+ ████╗ ████║██╔════╝██╔══██╗   ████╗ ████║██╔══██╗████╗  ██║██╔══██╗██╔════╝ ██╔════╝██╔══██╗
+ ██╔████╔██║██║     ██████╔╝   ██╔████╔██║███████║██╔██╗ ██║███████║██║  ███╗█████╗  ██████╔╝
+ ██║╚██╔╝██║██║     ██╔═══╝    ██║╚██╔╝██║██╔══██║██║╚██╗██║██╔══██║██║   ██║██╔══╝  ██╔══██╗
+ ██║ ╚═╝ ██║╚██████╗██║        ██║ ╚═╝ ██║██║  ██║██║ ╚████║██║  ██║╚██████╔╝███████╗██║  ██║
+ ╚═╝     ╚═╝ ╚═════╝╚═╝        ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝[/]
+"""
+
+KEYBOARD_HELP = """
+[bold white]Navigation:[/]  [cyan]↑↓[/] Select row   [cyan]Tab[/] Switch view   [cyan]Enter[/] Show details   [cyan]r[/] Refresh   [cyan]q[/] Quit
 """
 
 
-class BannerWidget(Static):
-    """ASCII art banner widget."""
+class HeaderWidget(Static):
+    """Header with ASCII art and keyboard shortcuts."""
 
-    def compose(self) -> ComposeResult:
-        yield Static(ASCII_HEADER, id="ascii-header")
+    def render(self) -> Text:
+        return Text.from_markup(ASCII_HEADER + KEYBOARD_HELP)
 
 
 class StatsBar(Static):
     """Statistics bar showing scan summary."""
 
-    def __init__(self, projects: List[ProjectInfo], **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.projects = projects
+        self._projects: List[ProjectInfo] = []
+
+    def update_stats(self, projects: List[ProjectInfo]) -> None:
+        """Update statistics with new project data."""
+        self._projects = projects
+        self.refresh()
 
     def render(self) -> Text:
-        total = len(self.projects)
-        with_mcp = sum(1 for p in self.projects if p.has_mcp_config)
-        with_git = sum(1 for p in self.projects if p.has_git)
-        total_servers = sum(p.server_count for p in self.projects)
+        total = len(self._projects)
+        with_mcp = sum(1 for p in self._projects if p.has_mcp_config)
+        with_git = sum(1 for p in self._projects if p.has_git)
+        total_servers = sum(p.server_count for p in self._projects)
 
         return Text.from_markup(
             f"[bold]Projects:[/] {total}  "
@@ -79,7 +84,7 @@ class ProjectDetailPanel(Static):
 
     def render(self) -> Text:
         if not self.project:
-            return Text.from_markup("[dim]Select a project to see details[/]")
+            return Text.from_markup("[dim]← Select a project to see details[/]")
 
         lines = []
         p = self.project
@@ -133,7 +138,7 @@ class ServerDetailPanel(Static):
 
     def render(self) -> Text:
         if not self.server_usage:
-            return Text.from_markup("[dim]Select a server to see details[/]")
+            return Text.from_markup("[dim]← Select a server to see details[/]")
 
         lines = []
         s = self.server_usage
@@ -166,24 +171,127 @@ class ServerDetailPanel(Static):
         return Text.from_markup("\n".join(lines))
 
 
-class ProjectsView(Container):
-    """Projects view with table and detail panel."""
+class MCPManagerApp(App):
+    """MCP Server Manager TUI Application."""
 
-    def __init__(self, projects: List[ProjectInfo], **kwargs):
+    CSS = """
+    HeaderWidget {
+        height: auto;
+        text-align: center;
+        padding: 0 1;
+    }
+
+    #stats-bar {
+        height: 1;
+        padding: 0 2;
+        background: $surface;
+        margin-bottom: 1;
+    }
+
+    #main-content {
+        height: 1fr;
+    }
+
+    #projects-container, #servers-container {
+        height: 100%;
+    }
+
+    #projects-list, #servers-list {
+        width: 55%;
+        height: 100%;
+    }
+
+    #projects-detail-container, #servers-detail-container {
+        width: 45%;
+        height: 100%;
+        border-left: solid $primary;
+        padding: 1 2;
+    }
+
+    DataTable {
+        height: 100%;
+    }
+
+    TabbedContent {
+        height: 100%;
+    }
+
+    TabPane {
+        height: 100%;
+        padding: 0;
+    }
+    """
+
+    BINDINGS = [
+        Binding("q", "quit", "Quit"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("tab", "focus_next", "Next", show=False),
+        Binding("shift+tab", "focus_previous", "Prev", show=False),
+    ]
+
+    def __init__(self, directory: str, **kwargs):
         super().__init__(**kwargs)
-        self.projects = projects
+        self.directory = directory
+        self.config = load_config()
+        self.scanner = EnhancedScanner()
+        self.projects: List[ProjectInfo] = []
+        self.server_usages: List[ServerUsage] = []
+
+        # Scan data BEFORE compose
+        self._initial_scan()
+
+    def _initial_scan(self) -> None:
+        """Perform initial data scan."""
+        settings = self.config.get_directory_settings(self.directory)
+        self.projects = self.scanner.scan_directory(
+            self.directory,
+            max_depth=settings.depth,
+            mode=settings.mode
+        )
+        self.server_usages = compute_server_usages(self.projects)
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="projects-container"):
-            with Vertical(id="projects-list"):
-                yield DataTable(id="projects-table")
-            with ScrollableContainer(id="projects-detail-container"):
-                yield ProjectDetailPanel(id="project-detail")
+        yield HeaderWidget()
+        yield StatsBar(id="stats-bar")
+
+        with TabbedContent(id="main-content"):
+            with TabPane("Projects", id="tab-projects"):
+                with Horizontal(id="projects-container"):
+                    with Vertical(id="projects-list"):
+                        yield DataTable(id="projects-table")
+                    with ScrollableContainer(id="projects-detail-container"):
+                        yield ProjectDetailPanel(id="project-detail")
+
+            with TabPane("Servers", id="tab-servers"):
+                with Horizontal(id="servers-container"):
+                    with Vertical(id="servers-list"):
+                        yield DataTable(id="servers-table")
+                    with ScrollableContainer(id="servers-detail-container"):
+                        yield ServerDetailPanel(id="server-detail")
+
+        yield Footer()
 
     def on_mount(self) -> None:
-        """Initialize the data table."""
+        """Initialize the app after mounting."""
+        self._populate_tables()
+
+        # Update stats bar
+        stats_bar = self.query_one("#stats-bar", StatsBar)
+        stats_bar.update_stats(self.projects)
+
+    def _populate_tables(self) -> None:
+        """Populate both data tables with scanned data."""
+        self._populate_projects_table()
+        self._populate_servers_table()
+
+    def _populate_projects_table(self) -> None:
+        """Populate the projects table."""
         table = self.query_one("#projects-table", DataTable)
         table.cursor_type = "row"
+        table.zebra_stripes = True
+
+        # Clear existing data
+        table.clear(columns=True)
 
         # Add columns
         table.add_column("Project", key="name", width=30)
@@ -218,42 +326,20 @@ class ProjectsView(Container):
                 key=project.path,
             )
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row selection."""
-        if event.row_key:
-            # Find the project by path
-            for project in self.projects:
-                if project.path == event.row_key.value:
-                    detail = self.query_one("#project-detail", ProjectDetailPanel)
-                    detail.set_project(project)
-                    break
-
-
-class ServersView(Container):
-    """Servers view with usage table and detail panel."""
-
-    def __init__(self, projects: List[ProjectInfo], **kwargs):
-        super().__init__(**kwargs)
-        self.projects = projects
-        self.server_usages = compute_server_usages(projects)
-
-    def compose(self) -> ComposeResult:
-        with Horizontal(id="servers-container"):
-            with Vertical(id="servers-list"):
-                yield DataTable(id="servers-table")
-            with ScrollableContainer(id="servers-detail-container"):
-                yield ServerDetailPanel(id="server-detail")
-
-    def on_mount(self) -> None:
-        """Initialize the data table."""
+    def _populate_servers_table(self) -> None:
+        """Populate the servers table."""
         table = self.query_one("#servers-table", DataTable)
         table.cursor_type = "row"
+        table.zebra_stripes = True
+
+        # Clear existing data
+        table.clear(columns=True)
 
         # Add columns
         table.add_column("Server", key="name", width=20)
         table.add_column("Type", key="type", width=6)
         table.add_column("Usage", key="usage", width=6)
-        table.add_column("Bar", key="bar", width=20)
+        table.add_column("Bar", key="bar", width=18)
         table.add_column("Projects", key="projects", width=30)
 
         if not self.server_usages:
@@ -283,8 +369,21 @@ class ServersView(Container):
             )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row selection."""
-        if event.row_key:
+        """Handle row selection in any table."""
+        if not event.row_key:
+            return
+
+        table_id = event.data_table.id
+
+        if table_id == "projects-table":
+            # Find the project by path
+            for project in self.projects:
+                if project.path == event.row_key.value:
+                    detail = self.query_one("#project-detail", ProjectDetailPanel)
+                    detail.set_project(project)
+                    break
+
+        elif table_id == "servers-table":
             # Find the server by name
             for server in self.server_usages:
                 if server.name == event.row_key.value:
@@ -292,107 +391,16 @@ class ServersView(Container):
                     detail.set_server(server)
                     break
 
-
-class MCPManagerApp(App):
-    """MCP Server Manager TUI Application."""
-
-    CSS = """
-    #ascii-header {
-        text-align: center;
-        padding: 1;
-    }
-
-    #stats-bar {
-        dock: top;
-        height: 1;
-        padding: 0 2;
-        background: $surface;
-    }
-
-    #projects-container, #servers-container {
-        height: 100%;
-    }
-
-    #projects-list, #servers-list {
-        width: 60%;
-        height: 100%;
-    }
-
-    #projects-detail-container, #servers-detail-container {
-        width: 40%;
-        height: 100%;
-        border-left: solid $primary;
-        padding: 1 2;
-    }
-
-    DataTable {
-        height: 100%;
-    }
-
-    TabbedContent {
-        height: 1fr;
-    }
-    """
-
-    BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("tab", "next_tab", "Next Tab", show=False),
-        Binding("shift+tab", "prev_tab", "Prev Tab", show=False),
-    ]
-
-    def __init__(self, directory: str, **kwargs):
-        super().__init__(**kwargs)
-        self.directory = directory
-        self.config = load_config()
-        self.scanner = EnhancedScanner()
-        self.projects: List[ProjectInfo] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield BannerWidget()
-        yield StatsBar(self.projects, id="stats-bar")
-
-        with TabbedContent():
-            with TabPane("Projects", id="tab-projects"):
-                yield ProjectsView(self.projects, id="projects-view")
-            with TabPane("Servers", id="tab-servers"):
-                yield ServersView(self.projects, id="servers-view")
-
-        yield Footer()
-
-    def on_mount(self) -> None:
-        """Initialize the app."""
-        self.action_refresh()
-
     def action_refresh(self) -> None:
         """Refresh the scan."""
-        settings = self.config.get_directory_settings(self.directory)
-        self.projects = self.scanner.scan_directory(
-            self.directory,
-            max_depth=settings.depth,
-            mode=settings.mode
-        )
+        self._initial_scan()
+        self._populate_tables()
 
         # Update stats bar
         stats_bar = self.query_one("#stats-bar", StatsBar)
-        stats_bar.projects = self.projects
-        stats_bar.refresh()
+        stats_bar.update_stats(self.projects)
 
-        # Recreate views with new data
-        # Note: In a real implementation, we'd update the existing views
-        # For simplicity, we notify the user to restart
         self.notify(f"Scanned {len(self.projects)} projects", title="Refresh Complete")
-
-    def action_next_tab(self) -> None:
-        """Switch to next tab."""
-        tabbed = self.query_one(TabbedContent)
-        tabbed.action_next_tab()
-
-    def action_prev_tab(self) -> None:
-        """Switch to previous tab."""
-        tabbed = self.query_one(TabbedContent)
-        tabbed.action_previous_tab()
 
 
 def run_tui(directory: str) -> None:
