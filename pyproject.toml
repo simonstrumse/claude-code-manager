@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-server-manager"
-version = "1.0.0"
-description = "A CLI tool to manage MCP servers in Claude Code"
+version = "2.0.0"
+description = "A CLI tool to manage MCP servers in Claude Code with interactive TUI"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.8"
 license = {text = "MIT"}
+dependencies = [
+    "textual>=0.47.0",
+]
 
 [tool.black]
 line-length = 100

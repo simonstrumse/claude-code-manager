@@ -692,6 +692,31 @@ Current directory: {cwd}
     scan_parser.add_argument('--depth', type=int, default=2,
                             help='Max depth to scan (default: 2)')
 
+    # TUI command
+    tui_parser = subparsers.add_parser('tui', help='Launch interactive TUI')
+    tui_parser.add_argument('directory', nargs='?', default='.',
+                           help='Directory to scan (default: current directory)')
+    tui_parser.add_argument('--add-dir', nargs=2, metavar=('PATH', 'MODE'),
+                           help='Add directory with scan mode (all/smart)')
+
+    # Projects command (static view)
+    projects_parser = subparsers.add_parser('projects', help='List all projects with MCP info')
+    projects_parser.add_argument('directory', nargs='?', default='.',
+                                help='Directory to scan')
+    projects_parser.add_argument('--mode', choices=['all', 'smart'], default='all',
+                                help='Scan mode: all=every folder, smart=project markers only')
+    projects_parser.add_argument('--depth', type=int, default=2,
+                                help='Max depth to scan')
+
+    # Servers command (static view)
+    servers_parser = subparsers.add_parser('servers', help='List MCP servers by usage')
+    servers_parser.add_argument('directory', nargs='?', default='.',
+                               help='Directory to scan')
+    servers_parser.add_argument('--mode', choices=['all', 'smart'], default='all',
+                               help='Scan mode: all=every folder, smart=project markers only')
+    servers_parser.add_argument('--depth', type=int, default=2,
+                               help='Max depth to scan')
+
     args = parser.parse_args()
     
     # Initialize manager
@@ -732,6 +757,96 @@ Current directory: {cwd}
             detailed=args.detailed,
             max_depth=args.depth
         )
+
+    elif args.command == 'tui':
+        try:
+            from mcp_tui import run_tui
+            from mcp_config import load_config, save_config, add_directory
+
+            # Handle --add-dir option
+            if args.add_dir:
+                config = load_config()
+                path, mode = args.add_dir
+                if mode not in ('all', 'smart'):
+                    print(f"{Colors.RED}Error: Mode must be 'all' or 'smart'{Colors.RESET}")
+                    sys.exit(1)
+                add_directory(config, path, mode)
+                print(f"{Colors.GREEN}✓ Added directory: {path} (mode: {mode}){Colors.RESET}")
+
+            run_tui(args.directory)
+        except ImportError as e:
+            print(f"{Colors.RED}Error: TUI requires 'textual' package{Colors.RESET}")
+            print(f"{Colors.YELLOW}Install with: pip install textual{Colors.RESET}")
+            sys.exit(1)
+
+    elif args.command == 'projects':
+        try:
+            from mcp_scanner import scan_for_overview
+            from mcp_data import compute_server_usages
+
+            projects = scan_for_overview(args.directory, args.mode, args.depth)
+
+            print(f"\n{Colors.BOLD}Projects Overview{Colors.RESET}")
+            print(f"{Colors.DIM}Directory: {os.path.abspath(args.directory)}{Colors.RESET}")
+            print(f"{Colors.DIM}Mode: {args.mode}, Depth: {args.depth}{Colors.RESET}")
+            print("-" * 80)
+
+            for p in projects:
+                git_icon = f"{Colors.GREEN}●{Colors.RESET}" if p.has_git else f"{Colors.DIM}○{Colors.RESET}"
+                mcp_icon = f"{Colors.GREEN}●{Colors.RESET}" if p.has_mcp_config else f"{Colors.YELLOW}○{Colors.RESET}"
+
+                if p.server_count > 0:
+                    servers = f"{p.server_count} servers"
+                else:
+                    servers = f"{Colors.DIM}global{Colors.RESET}"
+
+                print(f"  {git_icon} {mcp_icon} {Colors.BOLD}{p.name}{Colors.RESET} ({servers})")
+
+                if p.servers:
+                    server_names = ", ".join(s.name for s in p.servers)
+                    print(f"       {Colors.DIM}└─ {server_names}{Colors.RESET}")
+
+            print("-" * 80)
+            print(f"Total: {len(projects)} projects")
+
+        except ImportError as e:
+            print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")
+            sys.exit(1)
+
+    elif args.command == 'servers':
+        try:
+            from mcp_scanner import scan_for_overview
+            from mcp_data import compute_server_usages
+
+            projects = scan_for_overview(args.directory, args.mode, args.depth)
+            server_usages = compute_server_usages(projects)
+
+            print(f"\n{Colors.BOLD}MCP Servers by Usage{Colors.RESET}")
+            print(f"{Colors.DIM}Directory: {os.path.abspath(args.directory)}{Colors.RESET}")
+            print("-" * 80)
+
+            if not server_usages:
+                print(f"{Colors.YELLOW}No MCP servers found in scanned projects{Colors.RESET}")
+            else:
+                max_usage = max(s.usage_count for s in server_usages)
+
+                for s in server_usages:
+                    bar_len = int((s.usage_count / max_usage) * 15) if max_usage > 0 else 0
+                    bar = f"{Colors.GREEN}{'█' * bar_len}{Colors.RESET}{Colors.DIM}{'░' * (15 - bar_len)}{Colors.RESET}"
+
+                    projects_preview = ", ".join(p.name for p in s.projects[:3])
+                    if len(s.projects) > 3:
+                        projects_preview += f" +{len(s.projects) - 3}"
+
+                    print(f"  {Colors.CYAN}{s.name:20}{Colors.RESET} {bar} {s.usage_count:2}/{len(projects)}")
+                    print(f"       {Colors.DIM}└─ {projects_preview}{Colors.RESET}")
+
+            print("-" * 80)
+            print(f"Total: {len(server_usages)} unique servers across {len(projects)} projects")
+
+        except ImportError as e:
+            print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")
+            sys.exit(1)
 
 if __name__ == '__main__':
     main()
