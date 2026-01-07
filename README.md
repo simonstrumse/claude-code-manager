@@ -76,13 +76,14 @@ python mcp_tui.py ~/Project1 ~/Project2
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Focus detail panel |
+| `1-6` | Switch tabs (1=Projects, 2=MCP, 3=Skills, 4=Commands, 5=Rules, 6=CLAUDE.md) |
+| `↑↓` | Navigate list items |
+| `Tab` | Move focus: list → detail panel |
 | `Enter` | Preview full content (skills, commands, rules, CLAUDE.md) |
-| `g` | Jump to project (from MCP tab) |
-| `s` | Jump to MCP server (from Projects tab) |
+| `o` | Open in Finder (macOS) |
 | `d` | Discover projects across system |
 | `r` | Refresh scan |
-| `o` | Open in Finder (macOS) |
+| `?` | Show help |
 | `q` | Quit |
 | `Esc` | Close preview / cancel |
 
