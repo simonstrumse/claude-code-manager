@@ -332,7 +332,22 @@ class ProjectDetailPanel(Static):
                     lines.append(f"  {imports_badge} [{level_color}]{claude_md.level}[/] [dim]{filename}[/]")
             lines.append("")
 
-        if not any([servers_list, skills_list, rules_list, claude_mds_list]):
+        # Pre-commit hooks
+        pre_commit = getattr(p, 'pre_commit', None)
+        if pre_commit:
+            lines.append(f"[bold]Pre-commit ({pre_commit.hook_count} hooks):[/]")
+            # Group by repo
+            by_repo = {}
+            for hook in pre_commit.hooks:
+                repo_name = hook.repo_url.split('/')[-1] if '/' in hook.repo_url else hook.repo_url
+                if repo_name not in by_repo:
+                    by_repo[repo_name] = []
+                by_repo[repo_name].append(hook.id)
+            for repo_name, hooks in by_repo.items():
+                lines.append(f"  [dim]{repo_name}:[/] {', '.join(hooks)}")
+            lines.append("")
+
+        if not any([servers_list, skills_list, rules_list, claude_mds_list, pre_commit]):
             lines.append("[dim]No Claude Code configuration found[/]")
 
         return Text.from_markup("\n".join(lines))
@@ -1360,6 +1375,7 @@ class MCPManagerApp(App):
             table.add_column("Skills", key="skills")
             table.add_column("Rules", key="rules")
             table.add_column("Docs", key="docs")
+            table.add_column("Hooks", key="hooks")
         else:
             table.clear()
 
@@ -1369,6 +1385,9 @@ class MCPManagerApp(App):
             skills_text = Text(str(project.skill_count), style="magenta") if project.skill_count > 0 else Text("-", style="dim")
             rules_text = Text(str(project.rule_count), style="blue") if project.rule_count > 0 else Text("-", style="dim")
             docs_text = Text(str(project.claude_md_count), style="yellow") if project.claude_md_count > 0 else Text("-", style="dim")
+            # Pre-commit hooks count
+            hook_count = project.pre_commit.hook_count if project.pre_commit else 0
+            hooks_text = Text(str(hook_count), style="cyan") if hook_count > 0 else Text("-", style="dim")
 
             table.add_row(
                 self._redact(project.name),
@@ -1377,6 +1396,7 @@ class MCPManagerApp(App):
                 skills_text,
                 rules_text,
                 docs_text,
+                hooks_text,
                 key=project.path,
             )
 

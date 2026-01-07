@@ -441,6 +441,30 @@ class SettingsInfo:
     custom_model: Optional[str] = None
 
 
+@dataclass
+class PreCommitHook:
+    """A single pre-commit hook."""
+    id: str
+    repo_url: str
+    repo_rev: str
+
+
+@dataclass
+class PreCommitConfig:
+    """Pre-commit configuration for a project."""
+    path: str
+    hooks: List[PreCommitHook] = field(default_factory=list)
+
+    @property
+    def hook_count(self) -> int:
+        return len(self.hooks)
+
+    @property
+    def repo_count(self) -> int:
+        repos = set(h.repo_url for h in self.hooks)
+        return len(repos)
+
+
 # =============================================================================
 # ENHANCED PROJECT MODEL
 # =============================================================================
@@ -464,6 +488,9 @@ class EnhancedProjectInfo:
     # Hooks and Settings
     hooks: List[HookInfo] = field(default_factory=list)
     settings: List[SettingsInfo] = field(default_factory=list)
+
+    # Pre-commit configuration
+    pre_commit: Optional['PreCommitConfig'] = None
 
     @property
     def mcp_count(self) -> int:

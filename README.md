@@ -15,7 +15,16 @@
 
 ## Quick Start
 
-### Recommended: Virtual Environment (works everywhere)
+### Recommended: uv tool (fastest, no venv needed)
+
+```bash
+uv tool install git+https://github.com/simonstrumse/claude-code-manager.git
+ccmanager ~/Projects
+```
+
+Don't have `uv`? Install it: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+### Alternative: Virtual Environment
 
 ```bash
 git clone https://github.com/simonstrumse/claude-code-manager.git
@@ -25,26 +34,17 @@ pip install -e .
 ccmanager ~/Projects
 ```
 
-### Alternative: Global Install
-
-```bash
-git clone https://github.com/simonstrumse/claude-code-manager.git
-cd claude-code-manager
-pip install -e .
-ccmanager ~/Projects
-```
-
 <details>
-<summary><strong>"command not found" after global install?</strong></summary>
+<summary><strong>"command not found"?</strong></summary>
 
-On macOS, pip installs to `~/Library/Python/3.x/bin/` which isn't in PATH by default. Add it once:
+On macOS, pip installs to `~/Library/Python/3.x/bin/` which may not be in PATH. Fix:
 
 ```bash
 echo 'export PATH="$HOME/Library/Python/3.9/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-Or use the virtual environment method above — it avoids PATH issues entirely.
+Or use `uv tool` above — it handles PATH automatically.
 </details>
 
 ---

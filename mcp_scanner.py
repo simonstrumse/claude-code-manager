@@ -14,7 +14,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 from mcp_data import (
     ProjectInfo, ServerDetail,
     MCPServerConfig, SkillInfo, CommandInfo, RuleInfo, ClaudeMdInfo, HookInfo, SettingsInfo,
-    EnhancedProjectInfo
+    EnhancedProjectInfo, PreCommitConfig, PreCommitHook
 )
 
 
@@ -581,6 +581,11 @@ class ComprehensiveScanner:
         if self._user_settings:
             project.settings.append(self._user_settings)
 
+        # --- PRE-COMMIT ---
+        pre_commit_path = Path(path) / '.pre-commit-config.yaml'
+        if pre_commit_path.exists():
+            project.pre_commit = self._parse_pre_commit_config(pre_commit_path)
+
         return project
 
     def _load_project_mcp(self, path: str) -> List[MCPServerConfig]:
@@ -878,6 +883,42 @@ class ComprehensiveScanner:
         )
 
         return settings_info, hooks
+
+    def _parse_pre_commit_config(self, path: Path) -> Optional[PreCommitConfig]:
+        """Parse a .pre-commit-config.yaml file."""
+        try:
+            import yaml
+        except ImportError:
+            # PyYAML not installed, skip pre-commit parsing
+            return None
+
+        try:
+            with open(path, 'r') as f:
+                data = yaml.safe_load(f)
+        except Exception:
+            return None
+
+        if not data or 'repos' not in data:
+            return None
+
+        hooks = []
+        for repo in data.get('repos', []):
+            repo_url = repo.get('repo', '')
+            repo_rev = repo.get('rev', '')
+
+            for hook in repo.get('hooks', []):
+                hook_id = hook.get('id', '')
+                if hook_id:
+                    hooks.append(PreCommitHook(
+                        id=hook_id,
+                        repo_url=repo_url,
+                        repo_rev=repo_rev
+                    ))
+
+        return PreCommitConfig(
+            path=str(path),
+            hooks=hooks
+        )
 
     def _parse_frontmatter(self, content: str) -> Tuple[Dict, str]:
         """Parse YAML frontmatter from content."""
