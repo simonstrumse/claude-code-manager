@@ -16,7 +16,7 @@
 ## Quick Start
 
 ```bash
-# Install from source
+# Clone and install
 git clone https://github.com/simonstrumse/claude-code-manager.git
 cd claude-code-manager
 pip install -e .
@@ -25,7 +25,18 @@ pip install -e .
 ccmanager ~/Projects
 ```
 
-That's it! The TUI will scan your projects folder and display all Claude Code configurations.
+**"command not found"?** On macOS, pip installs to `~/Library/Python/3.x/bin/` which may not be in your PATH. Fix with:
+
+```bash
+# Add to your shell config (~/.zshrc or ~/.bashrc)
+export PATH="$HOME/Library/Python/3.9/bin:$PATH"
+source ~/.zshrc  # reload
+
+# Or use a virtual environment instead
+python3 -m venv venv && source venv/bin/activate
+pip install -e .
+ccmanager ~/Projects
+```
 
 ---
 
