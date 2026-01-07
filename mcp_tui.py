@@ -55,9 +55,7 @@ MAIN_HEADER = """[bold cyan]
   █▄▄ █▄▄ █▀█ █▄█ █▄▀ ██▄   █▄▄ █▄█ █▄▀ ██▄   █ ▀ █ █▀█ █ ▀█ █▀█ █▄█ ██▄ █▀▄[/]"""
 
 KEYBOARD_HELP = """
-[bold white]Navigation:[/]  [cyan]↑↓[/] Select   [cyan]Tab[/] Focus detail   [cyan]Enter[/] Preview   [cyan]g[/] → Project   [cyan]s[/] → MCP   [cyan]d[/] Discover   [cyan]r[/] Refresh   [cyan]q[/] Quit
-
-[dim]MCP=external tools • Skills=Claude knowledge • Cmds=slash commands • Rules=always-on instructions • CLAUDE.md=project docs[/]
+[bold white]Navigation:[/]  [cyan]1-6[/] Switch tabs   [cyan]↑↓[/] Select   [cyan]Tab[/] Focus detail   [cyan]Enter[/] Preview   [cyan]o[/] Open in Finder   [cyan]d[/] Discover   [cyan]r[/] Refresh   [cyan]?[/] Help   [cyan]q[/] Quit
 """
 
 
@@ -1107,17 +1105,28 @@ class MCPManagerApp(App):
         height: 1fr;
         padding: 0;
     }
+
+    /* Disable focus on ScrollableContainer so Tab goes directly to detail panel */
+    .detail-container {
+        can-focus: false;
+    }
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("d", "discover", "Discover projects"),
-        Binding("g", "goto_project", "Go to project"),
-        Binding("s", "goto_server", "Go to server"),
+        Binding("o", "open_project", "Open in Finder"),
         Binding("question_mark", "show_help", "Help"),
         Binding("tab", "focus_next", "Next", show=False),
         Binding("shift+tab", "focus_previous", "Prev", show=False),
+        # Number keys for quick tab switching
+        Binding("1", "switch_tab('tab-projects')", "Projects", show=False),
+        Binding("2", "switch_tab('tab-servers')", "MCP", show=False),
+        Binding("3", "switch_tab('tab-skills')", "Skills", show=False),
+        Binding("4", "switch_tab('tab-commands')", "Commands", show=False),
+        Binding("5", "switch_tab('tab-rules')", "Rules", show=False),
+        Binding("6", "switch_tab('tab-claudemd')", "CLAUDE.md", show=False),
     ]
 
     def __init__(self, directory: str, **kwargs):
@@ -1623,31 +1632,46 @@ class MCPManagerApp(App):
         """Handle request to jump to a server (from detail panel)."""
         self._navigate_to_server(message.server_name)
 
-    def action_goto_project(self) -> None:
-        """Go to the first project using the selected server (from Servers tab)."""
+    def action_switch_tab(self, tab_id: str) -> None:
+        """Switch to a specific tab by ID."""
+        tabbed = self.query_one("#main-content", TabbedContent)
+        tabbed.active = tab_id
+
+    def action_open_project(self) -> None:
+        """Open the selected project in Finder (macOS)."""
+        import subprocess
         tabbed = self.query_one("#main-content", TabbedContent)
         current_tab = tabbed.active
 
-        if current_tab == "tab-servers":
-            table = self.query_one("#servers-table", DataTable)
-            cursor_row = table.cursor_row
-            if cursor_row is not None and 0 <= cursor_row < len(self.server_usages):
-                server = self.server_usages[cursor_row]
-                if server.projects:
-                    self._navigate_to_project(server.projects[0])
-
-    def action_goto_server(self) -> None:
-        """Go to the first server of the selected project (from Projects tab)."""
-        tabbed = self.query_one("#main-content", TabbedContent)
-        current_tab = tabbed.active
-
+        # Get the project path based on current tab
+        project_path = None
         if current_tab == "tab-projects":
             table = self.query_one("#projects-table", DataTable)
             cursor_row = table.cursor_row
             if cursor_row is not None and 0 <= cursor_row < len(self.projects):
-                project = self.projects[cursor_row]
-                if project.mcp_servers:
-                    self._navigate_to_server(project.mcp_servers[0].name)
+                project_path = self.projects[cursor_row].path
+        elif current_tab == "tab-skills":
+            detail = self.query_one("#skill-detail", SkillDetailPanel)
+            if detail.skill:
+                project_path = os.path.dirname(os.path.dirname(detail.skill.path))
+        elif current_tab == "tab-commands":
+            detail = self.query_one("#command-detail", CommandDetailPanel)
+            if detail.command:
+                project_path = os.path.dirname(os.path.dirname(detail.command.path))
+        elif current_tab == "tab-rules":
+            detail = self.query_one("#rule-detail", RuleDetailPanel)
+            if detail.rule:
+                project_path = os.path.dirname(detail.rule.path)
+        elif current_tab == "tab-claudemd":
+            detail = self.query_one("#claudemd-detail", ClaudeMdDetailPanel)
+            if detail.claude_md:
+                project_path = os.path.dirname(detail.claude_md.path)
+
+        if project_path and os.path.exists(project_path):
+            subprocess.run(["open", project_path])
+            self.notify(f"Opened in Finder: {os.path.basename(project_path)}")
+        else:
+            self.notify("No project selected", severity="warning")
 
     def action_discover(self) -> None:
         """Discover Claude Code projects across the system."""
