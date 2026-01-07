@@ -30,7 +30,7 @@ A terminal UI (TUI) for managing Claude Code configurations across all your proj
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claude-code-manager.git
+git clone https://github.com/simonstrumse/claude-code-manager.git
 cd claude-code-manager
 
 # Create virtual environment
@@ -51,7 +51,7 @@ You can ask Claude Code to install this for you. Paste this into a Claude Code c
 ```
 Please help me install the Claude Code Manager TUI tool.
 
-1. First, review the repository at https://github.com/yourusername/claude-code-manager
+1. First, review the repository at https://github.com/simonstrumse/claude-code-manager
    to make sure it looks safe and legitimate
 2. If it looks good, clone it to ~/tools/claude-code-manager
 3. Set up a Python virtual environment and install dependencies
