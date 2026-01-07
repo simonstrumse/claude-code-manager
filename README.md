@@ -15,28 +15,37 @@
 
 ## Quick Start
 
+### Recommended: Virtual Environment (works everywhere)
+
 ```bash
-# Clone and install
 git clone https://github.com/simonstrumse/claude-code-manager.git
 cd claude-code-manager
-pip install -e .
-
-# Run it
-ccmanager ~/Projects
-```
-
-**"command not found"?** On macOS, pip installs to `~/Library/Python/3.x/bin/` which may not be in your PATH. Fix with:
-
-```bash
-# Add to your shell config (~/.zshrc or ~/.bashrc)
-export PATH="$HOME/Library/Python/3.9/bin:$PATH"
-source ~/.zshrc  # reload
-
-# Or use a virtual environment instead
 python3 -m venv venv && source venv/bin/activate
 pip install -e .
 ccmanager ~/Projects
 ```
+
+### Alternative: Global Install
+
+```bash
+git clone https://github.com/simonstrumse/claude-code-manager.git
+cd claude-code-manager
+pip install -e .
+ccmanager ~/Projects
+```
+
+<details>
+<summary><strong>"command not found" after global install?</strong></summary>
+
+On macOS, pip installs to `~/Library/Python/3.x/bin/` which isn't in PATH by default. Add it once:
+
+```bash
+echo 'export PATH="$HOME/Library/Python/3.9/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Or use the virtual environment method above — it avoids PATH issues entirely.
+</details>
 
 ---
 
