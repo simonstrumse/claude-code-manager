@@ -373,6 +373,11 @@ mcp-server-manager/
 - [ ] Project move/consolidate feature (relocate scattered projects)
 - [ ] Help tab with pedagogical documentation
 - [ ] Project discovery integration with TUI
+- [ ] **Suggestions feature** — Don't just scan, but suggest what to add:
+  - Recommend pre-commit hooks based on project type (Python → ruff, black, mypy)
+  - Link to skill marketplace
+  - "How to add" instructions for each config type
+  - Analyze what's missing per project
 
 ### Resolved
 - [x] DataTable empty on load (fixed: column handling)
