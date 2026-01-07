@@ -18,6 +18,9 @@ dependencies = [
 ccmanager = "mcp_tui:main"
 claude-code-manager = "mcp_tui:main"
 
+[tool.setuptools]
+py-modules = ["mcp_tui", "mcp_scanner", "mcp_data", "mcp_config", "mcp_operations"]
+
 [tool.black]
 line-length = 100
 target-version = ['py36', 'py37', 'py38', 'py39', 'py310', 'py311']
