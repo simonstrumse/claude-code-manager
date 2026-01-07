@@ -55,16 +55,33 @@ MAIN_HEADER = """[bold cyan]
   █▄▄ █▄▄ █▀█ █▄█ █▄▀ ██▄   █▄▄ █▄█ █▄▀ ██▄   █ ▀ █ █▀█ █ ▀█ █▀█ █▄█ ██▄ █▀▄[/]"""
 
 KEYBOARD_HELP = """
-[bold white]Navigation:[/]  [cyan]1-6[/] Switch tabs   [cyan]↑↓[/] Select   [cyan]Tab[/] Focus detail   [cyan]Enter[/] Preview   [cyan]o[/] Open in Finder   [cyan]d[/] Discover   [cyan]r[/] Refresh   [cyan]?[/] Help   [cyan]q[/] Quit
+[bold white]Navigation:[/]  [cyan]1-6[/] Switch tabs   [cyan]↑↓[/] Select   [cyan]Tab[/] Focus detail   [cyan]Enter[/] Preview   [cyan]o[/] Open   [cyan]p[/] Private   [cyan]d[/] Discover   [cyan]r[/] Refresh   [cyan]q[/] Quit
 """
 
 
 class HeaderWidget(Static):
     """Static header with ASCII art title and keyboard help."""
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._private_mode = False
+
     def on_mount(self) -> None:
         """Set content when mounted."""
-        content = MAIN_HEADER + "\n" + KEYBOARD_HELP
+        self._refresh_content()
+
+    def set_private_mode(self, enabled: bool) -> None:
+        """Update private mode indicator."""
+        self._private_mode = enabled
+        self._refresh_content()
+
+    def _refresh_content(self) -> None:
+        """Refresh the header content."""
+        if self._private_mode:
+            indicator = "\n[bold red on black] 🔒 PRIVATE MODE - Names redacted for screenshots [/]"
+            content = MAIN_HEADER + indicator + "\n" + KEYBOARD_HELP
+        else:
+            content = MAIN_HEADER + "\n" + KEYBOARD_HELP
         self.update(Text.from_markup(content))
 
 
@@ -193,8 +210,8 @@ class ProjectDetailPanel(Static):
         # Header
         git_badge = "[green]● git[/]" if p.has_git else "[dim]○ no git[/]"
         mcp_badge = "[green]● mcp[/]" if p.has_mcp_config else "[yellow]○ global[/]"
-        lines.append(f"[bold cyan]{p.name}[/]  {git_badge}  {mcp_badge}")
-        lines.append(f"[dim]{p.path}[/]")
+        lines.append(f"[bold cyan]{self.app._redact(p.name)}[/]  {git_badge}  {mcp_badge}")
+        lines.append(f"[dim]{self.app._redact_path(p.path)}[/]")
         lines.append("")
 
         # MCP Servers - interactive when focused
@@ -341,7 +358,7 @@ class ServerDetailPanel(Static):
         lines = []
         s = self.server_usage
 
-        lines.append(f"[bold cyan]{s.name}[/]  [dim]({s.server_type})[/]")
+        lines.append(f"[bold cyan]{self.app._redact(s.name)}[/]  [dim]({s.server_type})[/]")
         lines.append(f"[bold]Used by {s.usage_count} projects[/]")
         lines.append("")
 
@@ -392,10 +409,11 @@ class ServerDetailPanel(Static):
             level_color = {"enterprise": "red", "user": "yellow", "project": "green", "local": "cyan"}.get(level, "white")
 
             # Highlight selected project when focused
+            proj_name = self.app._redact(project.name)
             if is_focused and idx == self._selected_project_idx:
-                lines.append(f"  [reverse] {git_badge} {project.name} [{level_color}]{level}[/] [/reverse]")
+                lines.append(f"  [reverse] {git_badge} {proj_name} [{level_color}]{level}[/] [/reverse]")
             else:
-                lines.append(f"  {git_badge} {project.name} [{level_color}]{level}[/]")
+                lines.append(f"  {git_badge} {proj_name} [{level_color}]{level}[/]")
 
         if len(s.projects) > 12:
             lines.append(f"  [dim]... +{len(s.projects) - 12} more[/]")
@@ -553,7 +571,7 @@ class RuleDetailPanel(Static):
         lines.append(f"[bold blue]{r.name}[/]  [{level_color}]{r.level}[/]")
 
         if r.project_name:
-            lines.append(f"[dim]Project: {r.project_name}[/]")
+            lines.append(f"[dim]Project: {self.app._redact(r.project_name)}[/]")
         lines.append("")
 
         if r.paths_glob:
@@ -608,7 +626,7 @@ class ClaudeMdDetailPanel(Static):
         lines.append(f"[bold yellow]{c.filename}[/]  [{level_color}]{c.level}[/]")
 
         if c.project_name:
-            lines.append(f"[dim]Project: {c.project_name}[/]")
+            lines.append(f"[dim]Project: {self.app._redact(c.project_name)}[/]")
         lines.append("")
 
         if c.has_imports:
@@ -1127,6 +1145,7 @@ class MCPManagerApp(App):
         Binding("4", "switch_tab('tab-commands')", "Commands", show=False),
         Binding("5", "switch_tab('tab-rules')", "Rules", show=False),
         Binding("6", "switch_tab('tab-claudemd')", "CLAUDE.md", show=False),
+        Binding("p", "toggle_private", "Private mode", show=False),
     ]
 
     def __init__(self, directory: str, **kwargs):
@@ -1134,6 +1153,9 @@ class MCPManagerApp(App):
         self.directory = directory
         self.config = load_config()
         self.scanner = ComprehensiveScanner()
+
+        # Privacy mode (redacts project names for screenshots)
+        self._private_mode = False
 
         # Data
         self.projects: List[EnhancedProjectInfo] = []
@@ -1191,6 +1213,30 @@ class MCPManagerApp(App):
                 if claude_md.path not in seen_paths:
                     seen_paths.add(claude_md.path)
                     self.all_claude_mds.append(claude_md)
+
+    def _redact(self, text: str) -> str:
+        """Redact text for privacy mode. Keeps first 2 and last 1 chars, replaces middle with ***."""
+        if not self._private_mode or not text:
+            return text
+        if len(text) <= 4:
+            return text[0] + "**" + text[-1] if len(text) > 1 else text
+        return text[:2] + "***" + text[-1]
+
+    def _redact_path(self, path: str) -> str:
+        """Redact a file path, keeping directory structure but redacting folder/file names."""
+        if not self._private_mode or not path:
+            return path
+        parts = path.split(os.sep)
+        # Keep home dir indicator, redact rest
+        redacted_parts = []
+        for i, part in enumerate(parts):
+            if part in ('', '~', 'Users', 'home') or part.startswith('.'):
+                redacted_parts.append(part)
+            elif i < 3:  # Keep first few path segments
+                redacted_parts.append(part)
+            else:
+                redacted_parts.append(self._redact(part))
+        return os.sep.join(redacted_parts)
 
     def compose(self) -> ComposeResult:
         yield HeaderWidget(id="header")
@@ -1293,7 +1339,7 @@ class MCPManagerApp(App):
             docs_text = Text(str(project.claude_md_count), style="yellow") if project.claude_md_count > 0 else Text("-", style="dim")
 
             table.add_row(
-                project.name,
+                self._redact(project.name),
                 git_icon,
                 mcp_text,
                 skills_text,
@@ -1327,12 +1373,12 @@ class MCPManagerApp(App):
             filled = int((server.usage_count / max_usage) * bar_width) if max_usage > 0 else 0
             bar = Text("█" * filled, style="green") + Text("░" * (bar_width - filled), style="dim")
 
-            projects_preview = ", ".join(p.name for p in server.projects[:2])
+            projects_preview = ", ".join(self._redact(p.name) for p in server.projects[:2])
             if len(server.projects) > 2:
                 projects_preview += f" +{len(server.projects) - 2}"
 
             table.add_row(
-                server.name,
+                self._redact(server.name),
                 server.server_type,
                 str(server.usage_count),
                 bar,
@@ -1462,7 +1508,9 @@ class MCPManagerApp(App):
         for rule in all_rules:
             level_color = {"user": "yellow", "project": "green"}.get(rule.level, "white")
             scope = rule.paths_glob if rule.paths_glob else "all"
-            project_name = rule.project_name or "~" if rule.level == "project" else "~"
+            project_name = self._redact(rule.project_name) if rule.project_name else "~"
+            if rule.level != "project":
+                project_name = "~"
 
             table.add_row(
                 Text(rule.name, style="blue"),
@@ -1489,7 +1537,7 @@ class MCPManagerApp(App):
         for claude_md in self.all_claude_mds:
             level_color = {"enterprise": "red", "user": "yellow", "project": "green", "local": "cyan", "subdirectory": "magenta"}.get(claude_md.level, "white")
             imports_icon = Text("●", style="green") if claude_md.has_imports else Text("○", style="dim")
-            project_name = claude_md.project_name or "~"
+            project_name = self._redact(claude_md.project_name) if claude_md.project_name else "~"
 
             table.add_row(
                 Text(claude_md.filename, style="yellow"),
@@ -1580,6 +1628,17 @@ class MCPManagerApp(App):
         )
 
         self.notify(f"Scanned {len(self.projects)} projects", title="Refresh Complete")
+
+    def action_toggle_private(self) -> None:
+        """Toggle private mode (redacts project names for screenshots)."""
+        self._private_mode = not self._private_mode
+        # Refresh all tables to show redacted/unredacted names
+        self._populate_all_tables()
+        # Update header to show mode indicator
+        header = self.query_one("#header", HeaderWidget)
+        header.set_private_mode(self._private_mode)
+        mode = "ON 🔒" if self._private_mode else "OFF"
+        self.notify(f"Private mode: {mode}", title="Privacy")
 
     def _navigate_to_project(self, project) -> None:
         """Navigate to a specific project in the Projects tab.
