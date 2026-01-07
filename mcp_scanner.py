@@ -261,6 +261,7 @@ USER_PATHS = {
     'claude_json': Path.home() / '.claude.json',
     'claude_dir': Path.home() / '.claude',
     'skills': Path.home() / '.claude' / 'skills',
+    'plugins': Path.home() / '.claude' / 'plugins' / 'marketplaces',
     'commands': Path.home() / '.claude' / 'commands',
     'rules': Path.home() / '.claude' / 'rules',
     'settings': Path.home() / '.claude' / 'settings.json',
@@ -332,6 +333,11 @@ class ComprehensiveScanner:
             self._user_skills = self._scan_skills_directory(
                 USER_PATHS['skills'], level='personal'
             )
+
+        # Load plugin skills from ~/.claude/plugins/marketplaces/
+        if USER_PATHS['plugins'].is_dir():
+            plugin_skills = self._scan_plugin_skills(USER_PATHS['plugins'])
+            self._user_skills.extend(plugin_skills)
 
         # Load user commands
         if USER_PATHS['commands'].is_dir():
@@ -618,6 +624,37 @@ class ComprehensiveScanner:
             skill = self._parse_skill_md(skill_md, level)
             if skill:
                 skills.append(skill)
+
+        return skills
+
+    def _scan_plugin_skills(self, marketplaces_dir: Path) -> List[SkillInfo]:
+        """Scan plugin marketplaces for skills.
+
+        Structure: marketplaces/{marketplace}/plugins/{plugin}/skills/{skill}/SKILL.md
+        """
+        skills = []
+
+        if not marketplaces_dir.is_dir():
+            return skills
+
+        # Iterate through marketplaces
+        for marketplace in marketplaces_dir.iterdir():
+            if not marketplace.is_dir() or marketplace.name.startswith('.'):
+                continue
+
+            plugins_dir = marketplace / 'plugins'
+            if not plugins_dir.is_dir():
+                continue
+
+            # Iterate through plugins
+            for plugin in plugins_dir.iterdir():
+                if not plugin.is_dir():
+                    continue
+
+                skills_dir = plugin / 'skills'
+                if skills_dir.is_dir():
+                    plugin_skills = self._scan_skills_directory(skills_dir, level='plugin')
+                    skills.extend(plugin_skills)
 
         return skills
 

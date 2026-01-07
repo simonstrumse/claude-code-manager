@@ -1993,6 +1993,7 @@ def main() -> None:
         paths_to_check = [
             (home / '.claude.json', 'User MCP servers'),
             (home / '.claude' / 'skills', 'User skills'),
+            (home / '.claude' / 'plugins' / 'marketplaces', 'Plugin skills'),
             (home / '.claude' / 'commands', 'User commands'),
             (home / '.claude' / 'rules', 'User rules'),
             (home / '.claude' / 'CLAUDE.md', 'User CLAUDE.md'),

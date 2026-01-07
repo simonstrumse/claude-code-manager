@@ -515,18 +515,18 @@ class EnhancedProjectInfo:
         """Convert to ServerDetail list for backward compatibility."""
         result = []
         for mcp in self.mcp_servers:
-            if mcp.level == "project":  # Only show project-level for compat
-                detail = ServerDetail(
-                    name=mcp.name,
-                    server_type=mcp.server_type,
-                    command=mcp.command,
-                    url=mcp.url,
-                    supabase_project_ref=mcp.supabase_project_ref,
-                    resend_sender=mcp.resend_sender,
-                    api_key_preview=mcp.api_key_preview,
-                    env_vars=mcp.env_vars
-                )
-                result.append(detail)
+            # Include all levels (user, project, local, enterprise)
+            detail = ServerDetail(
+                name=mcp.name,
+                server_type=mcp.server_type,
+                command=mcp.command,
+                url=mcp.url,
+                supabase_project_ref=mcp.supabase_project_ref,
+                resend_sender=mcp.resend_sender,
+                api_key_preview=mcp.api_key_preview,
+                env_vars=mcp.env_vars
+            )
+            result.append(detail)
         return result
 
     @property
