@@ -2,6 +2,7 @@
 
 > **See all your MCP servers, skills, commands, rules, and CLAUDE.md files in one place** — across every project on your machine
 
+[![PyPI](https://img.shields.io/pypi/v/ccmanager)](https://pypi.org/project/ccmanager/)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Compatible-orange)](https://claude.ai/code)
@@ -15,21 +16,27 @@
 
 ## Quick Start
 
-### Recommended: uv tool (fastest, no venv needed)
+### Option 1: pip (simplest)
 
 ```bash
-uv tool install git+https://github.com/simonstrumse/claude-code-manager.git
+pip install ccmanager
+ccmanager ~/Projects
+```
+
+### Option 2: uv tool (fastest, isolated)
+
+```bash
+uv tool install ccmanager
 ccmanager ~/Projects
 ```
 
 Don't have `uv`? Install it: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-### Alternative: Virtual Environment
+### Option 3: From Source
 
 ```bash
 git clone https://github.com/simonstrumse/claude-code-manager.git
 cd claude-code-manager
-python3 -m venv venv && source venv/bin/activate
 pip install -e .
 ccmanager ~/Projects
 ```

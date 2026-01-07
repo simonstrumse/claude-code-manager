@@ -3,17 +3,40 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claude-code-manager"
+name = "ccmanager"
 version = "2.0.0"
 description = "Terminal UI for managing Claude Code configurations across all your projects"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
+authors = [
+    {name = "Simon Strumse"}
+]
+keywords = ["claude", "anthropic", "mcp", "model-context-protocol", "tui", "terminal", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
 dependencies = [
     "textual>=0.47.0",
     "rich>=13.0.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/simonstrumse/claude-code-manager"
+Repository = "https://github.com/simonstrumse/claude-code-manager"
+Issues = "https://github.com/simonstrumse/claude-code-manager/issues"
 
 [project.scripts]
 ccmanager = "mcp_tui:main"
