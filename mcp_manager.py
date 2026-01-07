@@ -717,6 +717,31 @@ Current directory: {cwd}
     servers_parser.add_argument('--depth', type=int, default=2,
                                help='Max depth to scan')
 
+    # Skills command
+    skills_parser = subparsers.add_parser('skills', help='List all skills (user + project)')
+    skills_parser.add_argument('directory', nargs='?', default='.',
+                              help='Directory to scan for project skills')
+    skills_parser.add_argument('--depth', type=int, default=2,
+                              help='Max depth to scan')
+
+    # Rules command
+    rules_parser = subparsers.add_parser('rules', help='List all rules (user + project)')
+    rules_parser.add_argument('directory', nargs='?', default='.',
+                             help='Directory to scan for project rules')
+    rules_parser.add_argument('--depth', type=int, default=2,
+                             help='Max depth to scan')
+
+    # Claude-md command
+    claude_md_parser = subparsers.add_parser('claude-md', help='List all CLAUDE.md files')
+    claude_md_parser.add_argument('directory', nargs='?', default='.',
+                                 help='Directory to scan')
+    claude_md_parser.add_argument('--depth', type=int, default=2,
+                                 help='Max depth to scan')
+
+    # Info command (detailed view of one project)
+    info_parser = subparsers.add_parser('info', help='Show full config info for a project')
+    info_parser.add_argument('project', help='Project path or name')
+
     args = parser.parse_args()
     
     # Initialize manager
@@ -843,6 +868,259 @@ Current directory: {cwd}
 
             print("-" * 80)
             print(f"Total: {len(server_usages)} unique servers across {len(projects)} projects")
+
+        except ImportError as e:
+            print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")
+            sys.exit(1)
+
+    elif args.command == 'skills':
+        try:
+            from mcp_scanner import ComprehensiveScanner
+            from mcp_data import compute_skill_usages
+
+            scanner = ComprehensiveScanner()
+            projects = scanner.scan_directory(args.directory, max_depth=args.depth)
+            skill_usages = compute_skill_usages(projects)
+
+            print(f"\n{Colors.BOLD}Skills Overview{Colors.RESET}")
+            print(f"{Colors.DIM}Directory: {os.path.abspath(args.directory)}{Colors.RESET}")
+            print("-" * 80)
+
+            # Group by level
+            level_colors = {
+                'personal': Colors.BLUE,
+                'project': Colors.MAGENTA,
+                'enterprise': Colors.PURPLE,
+                'plugin': Colors.CYAN
+            }
+
+            if not skill_usages:
+                print(f"{Colors.YELLOW}No skills found{Colors.RESET}")
+            else:
+                # Show user-level skills first
+                user_skills = [s for s in skill_usages if s.level == 'personal']
+                project_skills = [s for s in skill_usages if s.level == 'project']
+
+                if user_skills:
+                    print(f"\n{Colors.BLUE}{Colors.BOLD}[Personal/User]{Colors.RESET} ~/.claude/skills/")
+                    for su in user_skills:
+                        desc_preview = su.description[:50] + "..." if len(su.description) > 50 else su.description
+                        print(f"  {Colors.BOLD}{su.name}{Colors.RESET}")
+                        print(f"       {Colors.DIM}{desc_preview}{Colors.RESET}")
+
+                if project_skills:
+                    print(f"\n{Colors.MAGENTA}{Colors.BOLD}[Project-level]{Colors.RESET}")
+                    for su in project_skills:
+                        projects_preview = ", ".join(p.name for p in su.projects[:3])
+                        if len(su.projects) > 3:
+                            projects_preview += f" +{len(su.projects) - 3}"
+                        print(f"  {Colors.BOLD}{su.name}{Colors.RESET} ({len(su.projects)} projects)")
+                        print(f"       {Colors.DIM}└─ {projects_preview}{Colors.RESET}")
+
+            print("-" * 80)
+            print(f"Total: {len(skill_usages)} unique skills")
+
+        except ImportError as e:
+            print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")
+            sys.exit(1)
+
+    elif args.command == 'rules':
+        try:
+            from mcp_scanner import ComprehensiveScanner
+            from mcp_data import compute_rule_usages
+
+            scanner = ComprehensiveScanner()
+            projects = scanner.scan_directory(args.directory, max_depth=args.depth)
+            rule_usages = compute_rule_usages(projects)
+
+            print(f"\n{Colors.BOLD}Rules Overview{Colors.RESET}")
+            print(f"{Colors.DIM}Directory: {os.path.abspath(args.directory)}{Colors.RESET}")
+            print("-" * 80)
+
+            if not rule_usages:
+                print(f"{Colors.YELLOW}No rules found{Colors.RESET}")
+            else:
+                # Group by level
+                user_rules = [r for r in rule_usages if r.level == 'user']
+                project_rules = [r for r in rule_usages if r.level == 'project']
+
+                if user_rules:
+                    print(f"\n{Colors.BLUE}{Colors.BOLD}[User]{Colors.RESET} ~/.claude/rules/")
+                    for ru in user_rules:
+                        scope = ru.paths_glob if ru.paths_glob else "all files"
+                        print(f"  {Colors.BOLD}{ru.name}{Colors.RESET}")
+                        print(f"       {Colors.DIM}Scope: {scope}{Colors.RESET}")
+
+                if project_rules:
+                    print(f"\n{Colors.MAGENTA}{Colors.BOLD}[Project-level]{Colors.RESET}")
+                    for ru in project_rules:
+                        projects_preview = ", ".join(p.name for p in ru.projects[:3])
+                        if len(ru.projects) > 3:
+                            projects_preview += f" +{len(ru.projects) - 3}"
+                        scope = ru.paths_glob if ru.paths_glob else "all"
+                        print(f"  {Colors.BOLD}{ru.name}{Colors.RESET} ({len(ru.projects)} projects, scope: {scope})")
+                        print(f"       {Colors.DIM}└─ {projects_preview}{Colors.RESET}")
+
+            print("-" * 80)
+            print(f"Total: {len(rule_usages)} unique rules")
+
+        except ImportError as e:
+            print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")
+            sys.exit(1)
+
+    elif args.command == 'claude-md':
+        try:
+            from mcp_scanner import ComprehensiveScanner
+
+            scanner = ComprehensiveScanner()
+            projects = scanner.scan_directory(args.directory, max_depth=args.depth)
+
+            print(f"\n{Colors.BOLD}CLAUDE.md Files Overview{Colors.RESET}")
+            print(f"{Colors.DIM}Directory: {os.path.abspath(args.directory)}{Colors.RESET}")
+            print("-" * 80)
+
+            # Collect all unique claude.md files
+            all_docs = {}  # path -> (doc, project_name)
+            for p in projects:
+                for doc in p.claude_mds:
+                    if doc.path not in all_docs:
+                        all_docs[doc.path] = (doc, p.name)
+
+            level_colors = {
+                'enterprise': Colors.PURPLE,
+                'user': Colors.BLUE,
+                'project': Colors.MAGENTA,
+                'local': Colors.CYAN,
+                'subdirectory': Colors.DIM
+            }
+
+            if not all_docs:
+                print(f"{Colors.YELLOW}No CLAUDE.md files found{Colors.RESET}")
+            else:
+                # Group by level
+                by_level = defaultdict(list)
+                for path, (doc, proj_name) in all_docs.items():
+                    by_level[doc.level].append((doc, proj_name))
+
+                level_order = ['enterprise', 'user', 'project', 'local', 'subdirectory']
+                for level in level_order:
+                    if level in by_level:
+                        level_color = level_colors.get(level, Colors.WHITE)
+                        print(f"\n{level_color}{Colors.BOLD}[{level.title()}]{Colors.RESET}")
+                        for doc, proj_name in by_level[level]:
+                            display_path = doc.path.replace(str(Path.home()), '~')
+                            imports_icon = f"{Colors.GREEN}@{Colors.RESET}" if doc.has_imports else " "
+                            scope = f" ({doc.paths_glob})" if doc.paths_glob else ""
+                            print(f"  {imports_icon} {Colors.BOLD}{os.path.basename(doc.path)}{Colors.RESET}{scope}")
+                            print(f"       {Colors.DIM}{display_path}{Colors.RESET}")
+                            if doc.content_preview:
+                                preview = doc.content_preview[:60].replace('\n', ' ')
+                                print(f"       {Colors.DIM}\"{preview}...\"{Colors.RESET}")
+
+            print("-" * 80)
+            print(f"Total: {len(all_docs)} CLAUDE.md files ({Colors.GREEN}@{Colors.RESET} = has imports)")
+
+        except ImportError as e:
+            print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")
+            sys.exit(1)
+
+    elif args.command == 'info':
+        try:
+            from mcp_scanner import ComprehensiveScanner
+
+            scanner = ComprehensiveScanner()
+
+            # Expand path
+            project_path = os.path.abspath(os.path.expanduser(args.project))
+
+            if not os.path.isdir(project_path):
+                print(f"{Colors.RED}Error: '{project_path}' is not a valid directory{Colors.RESET}")
+                sys.exit(1)
+
+            # Scan just this project
+            project = scanner.scan_project(project_path)
+
+            print(f"\n{Colors.BOLD}Project Info: {project.name}{Colors.RESET}")
+            print(f"{Colors.DIM}Path: {project.path}{Colors.RESET}")
+            print("-" * 80)
+
+            # Git status
+            git_status = f"{Colors.GREEN}● Git repo{Colors.RESET}" if project.has_git else f"{Colors.DIM}○ No git{Colors.RESET}"
+            print(f"\n{git_status}")
+
+            # MCP Servers
+            print(f"\n{Colors.BOLD}MCP Servers ({len(project.mcp_servers)}){Colors.RESET}")
+            if project.mcp_servers:
+                for srv in project.mcp_servers:
+                    level_color = {
+                        'enterprise': Colors.PURPLE,
+                        'user': Colors.BLUE,
+                        'project': Colors.MAGENTA,
+                        'local': Colors.CYAN
+                    }.get(srv.level, Colors.WHITE)
+                    print(f"  {level_color}[{srv.level}]{Colors.RESET} {srv.name} ({srv.server_type})")
+                    if srv.command:
+                        print(f"       {Colors.DIM}cmd: {srv.command}{Colors.RESET}")
+                    if srv.url:
+                        print(f"       {Colors.DIM}url: {srv.url}{Colors.RESET}")
+            else:
+                print(f"  {Colors.DIM}None configured{Colors.RESET}")
+
+            # Skills
+            print(f"\n{Colors.BOLD}Skills ({len(project.skills)}){Colors.RESET}")
+            if project.skills:
+                for skill in project.skills[:10]:  # Limit to 10
+                    level_color = {
+                        'personal': Colors.BLUE,
+                        'project': Colors.MAGENTA,
+                        'enterprise': Colors.PURPLE,
+                        'plugin': Colors.CYAN
+                    }.get(skill.level, Colors.WHITE)
+                    print(f"  {level_color}[{skill.level}]{Colors.RESET} {skill.name}")
+                if len(project.skills) > 10:
+                    print(f"  {Colors.DIM}... and {len(project.skills) - 10} more{Colors.RESET}")
+            else:
+                print(f"  {Colors.DIM}None{Colors.RESET}")
+
+            # Rules
+            print(f"\n{Colors.BOLD}Rules ({len(project.rules)}){Colors.RESET}")
+            if project.rules:
+                for rule in project.rules:
+                    level_color = {
+                        'user': Colors.BLUE,
+                        'project': Colors.MAGENTA
+                    }.get(rule.level, Colors.WHITE)
+                    scope = f" ({rule.paths_glob})" if rule.paths_glob else ""
+                    print(f"  {level_color}[{rule.level}]{Colors.RESET} {rule.name}{scope}")
+            else:
+                print(f"  {Colors.DIM}None{Colors.RESET}")
+
+            # CLAUDE.md files
+            print(f"\n{Colors.BOLD}CLAUDE.md ({len(project.claude_mds)}){Colors.RESET}")
+            if project.claude_mds:
+                for doc in project.claude_mds:
+                    level_color = {
+                        'enterprise': Colors.PURPLE,
+                        'user': Colors.BLUE,
+                        'project': Colors.MAGENTA,
+                        'local': Colors.CYAN,
+                        'subdirectory': Colors.DIM
+                    }.get(doc.level, Colors.WHITE)
+                    imports_icon = f"{Colors.GREEN}@{Colors.RESET}" if doc.has_imports else " "
+                    print(f"  {level_color}[{doc.level}]{Colors.RESET} {imports_icon} {os.path.basename(doc.path)}")
+            else:
+                print(f"  {Colors.DIM}None{Colors.RESET}")
+
+            # Hooks
+            print(f"\n{Colors.BOLD}Hooks ({len(project.hooks)}){Colors.RESET}")
+            if project.hooks:
+                for hook in project.hooks:
+                    matcher_info = f" (matcher: {hook.matcher})" if hook.matcher else ""
+                    print(f"  {Colors.CYAN}{hook.event}{Colors.RESET} → {hook.hook_type}{matcher_info}")
+            else:
+                print(f"  {Colors.DIM}None{Colors.RESET}")
+
+            print("-" * 80)
 
         except ImportError as e:
             print(f"{Colors.RED}Error importing modules: {e}{Colors.RESET}")

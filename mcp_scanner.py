@@ -13,7 +13,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 
 from mcp_data import (
     ProjectInfo, ServerDetail,
-    MCPServerConfig, SkillInfo, RuleInfo, ClaudeMdInfo, HookInfo, SettingsInfo,
+    MCPServerConfig, SkillInfo, CommandInfo, RuleInfo, ClaudeMdInfo, HookInfo, SettingsInfo,
     EnhancedProjectInfo
 )
 
@@ -261,6 +261,7 @@ USER_PATHS = {
     'claude_json': Path.home() / '.claude.json',
     'claude_dir': Path.home() / '.claude',
     'skills': Path.home() / '.claude' / 'skills',
+    'commands': Path.home() / '.claude' / 'commands',
     'rules': Path.home() / '.claude' / 'rules',
     'settings': Path.home() / '.claude' / 'settings.json',
     'claude_md': Path.home() / '.claude' / 'CLAUDE.md',
@@ -279,6 +280,7 @@ class ComprehensiveScanner:
         self._user_mcp_servers: Dict[str, MCPServerConfig] = {}
         self._user_mcp_by_project: Dict[str, Dict[str, MCPServerConfig]] = {}
         self._user_skills: List[SkillInfo] = []
+        self._user_commands: List[CommandInfo] = []
         self._user_rules: List[RuleInfo] = []
         self._user_claude_md: Optional[ClaudeMdInfo] = None
         self._user_hooks: List[HookInfo] = []
@@ -329,6 +331,12 @@ class ComprehensiveScanner:
         if USER_PATHS['skills'].is_dir():
             self._user_skills = self._scan_skills_directory(
                 USER_PATHS['skills'], level='personal'
+            )
+
+        # Load user commands
+        if USER_PATHS['commands'].is_dir():
+            self._user_commands = self._scan_commands_directory(
+                USER_PATHS['commands'], level='user'
             )
 
         # Load user rules
@@ -433,6 +441,21 @@ class ComprehensiveScanner:
 
         return projects
 
+    def scan_project(self, path: str) -> EnhancedProjectInfo:
+        """
+        Scan a single project for comprehensive configuration.
+
+        Args:
+            path: Absolute path to the project directory
+
+        Returns:
+            EnhancedProjectInfo with all config data
+        """
+        self._ensure_loaded()
+        path = os.path.expanduser(path)
+        path = os.path.abspath(path)
+        return self._analyze_project_comprehensive(path)
+
     def _is_project_folder(self, path: str) -> bool:
         """Check if a folder looks like a project."""
         try:
@@ -473,26 +496,31 @@ class ComprehensiveScanner:
                 project.mcp_servers.append(server)
 
         # --- SKILLS ---
-        # Project skills
+        # Project skills only (user skills tracked separately, not duplicated per project)
         project_skills_dir = Path(path) / '.claude' / 'skills'
         if project_skills_dir.is_dir():
             project.skills = self._scan_skills_directory(
                 project_skills_dir, level='project'
             )
+        # NOTE: User skills available via get_user_skills(), not added to every project
 
-        # Add user skills (available to all projects)
-        project.skills.extend(self._user_skills)
+        # --- COMMANDS ---
+        # Project commands only
+        project_commands_dir = Path(path) / '.claude' / 'commands'
+        if project_commands_dir.is_dir():
+            project.commands = self._scan_commands_directory(
+                project_commands_dir, level='project'
+            )
+        # NOTE: User commands available via get_user_commands(), not added to every project
 
         # --- RULES ---
-        # Project rules
+        # Project rules only (user rules tracked separately, not duplicated per project)
         project_rules_dir = Path(path) / '.claude' / 'rules'
         if project_rules_dir.is_dir():
             project.rules = self._scan_rules_directory(
-                project_rules_dir, level='project'
+                project_rules_dir, level='project', project_name=name
             )
-
-        # Add user rules
-        project.rules.extend(self._user_rules)
+        # NOTE: User rules available via get_user_rules(), not added to every project
 
         # --- CLAUDE.MD ---
         # Project root CLAUDE.md
@@ -500,14 +528,14 @@ class ComprehensiveScanner:
             claude_md_path = Path(path) / claude_md_name
             if claude_md_path.exists():
                 project.claude_mds.append(
-                    self._parse_claude_md(claude_md_path, level='project')
+                    self._parse_claude_md(claude_md_path, level='project', project_name=name)
                 )
 
         # CLAUDE.local.md
         local_claude_md = Path(path) / 'CLAUDE.local.md'
         if local_claude_md.exists():
             project.claude_mds.append(
-                self._parse_claude_md(local_claude_md, level='local')
+                self._parse_claude_md(local_claude_md, level='local', project_name=name)
             )
 
         # Subdirectory CLAUDE.md files (scan common subdirs)
@@ -515,7 +543,7 @@ class ComprehensiveScanner:
             if subdir_claude_md.parent != Path(path) and '.claude' not in str(subdir_claude_md):
                 rel_dir = str(subdir_claude_md.parent.relative_to(path))
                 if not any(skip in rel_dir for skip in SKIP_DIRS):
-                    info = self._parse_claude_md(subdir_claude_md, level='subdirectory')
+                    info = self._parse_claude_md(subdir_claude_md, level='subdirectory', project_name=name)
                     info.relative_dir = rel_dir
                     project.claude_mds.append(info)
 
@@ -622,10 +650,66 @@ class ComprehensiveScanner:
             model=model
         )
 
+    def _scan_commands_directory(
+        self,
+        commands_dir: Path,
+        level: Literal["user", "project", "plugin"]
+    ) -> List[CommandInfo]:
+        """Scan a commands directory for .md files (slash commands)."""
+        commands = []
+
+        if not commands_dir.is_dir():
+            return commands
+
+        # Commands are .md files directly in the commands directory
+        for md_file in commands_dir.glob('*.md'):
+            command = self._parse_command_md(md_file, level)
+            if command:
+                commands.append(command)
+
+        return commands
+
+    def _parse_command_md(
+        self,
+        path: Path,
+        level: Literal["user", "project", "plugin"]
+    ) -> Optional[CommandInfo]:
+        """Parse a command .md file (slash command definition)."""
+        try:
+            content = path.read_text(encoding='utf-8')
+        except IOError:
+            return None
+
+        frontmatter, body = self._parse_frontmatter(content)
+
+        # Command name is filename without extension (e.g., commit.md -> /commit)
+        name = path.stem
+        description = frontmatter.get('description', '')
+
+        # If no description in frontmatter, use first line of body
+        if not description and body:
+            first_line = body.strip().split('\n')[0]
+            # Remove markdown headers
+            description = first_line.lstrip('#').strip()[:100]
+
+        allowed_tools_str = frontmatter.get('allowed-tools', '')
+        allowed_tools = [t.strip() for t in allowed_tools_str.split(',') if t.strip()]
+        args = frontmatter.get('args')
+
+        return CommandInfo(
+            name=name,
+            description=description[:200] if description else f'/{name} command',
+            level=level,
+            path=str(path),
+            allowed_tools=allowed_tools,
+            args=args
+        )
+
     def _scan_rules_directory(
         self,
         rules_dir: Path,
-        level: Literal["user", "project"]
+        level: Literal["user", "project"],
+        project_name: Optional[str] = None
     ) -> List[RuleInfo]:
         """Scan a rules directory for .md files."""
         rules = []
@@ -635,7 +719,7 @@ class ComprehensiveScanner:
 
         # Recursively find all .md files
         for md_file in rules_dir.rglob('*.md'):
-            rule = self._parse_rule_md(md_file, level)
+            rule = self._parse_rule_md(md_file, level, project_name)
             if rule:
                 rules.append(rule)
 
@@ -644,7 +728,8 @@ class ComprehensiveScanner:
     def _parse_rule_md(
         self,
         path: Path,
-        level: Literal["user", "project"]
+        level: Literal["user", "project"],
+        project_name: Optional[str] = None
     ) -> Optional[RuleInfo]:
         """Parse a rule .md file."""
         try:
@@ -665,13 +750,15 @@ class ComprehensiveScanner:
             level=level,
             path=str(path),
             paths_glob=paths_glob,
-            content_preview=content_preview
+            content_preview=content_preview,
+            project_name=project_name
         )
 
     def _parse_claude_md(
         self,
         path: Path,
-        level: Literal["enterprise", "project", "local", "subdirectory", "user"]
+        level: Literal["enterprise", "project", "local", "subdirectory", "user"],
+        project_name: Optional[str] = None
     ) -> ClaudeMdInfo:
         """Parse a CLAUDE.md file."""
         content = ''
@@ -693,7 +780,8 @@ class ComprehensiveScanner:
             path=str(path),
             has_imports=has_imports,
             paths_glob=paths_glob,
-            content_preview=content_preview
+            content_preview=content_preview,
+            project_name=project_name
         )
 
     def _parse_settings_file(
@@ -782,6 +870,11 @@ class ComprehensiveScanner:
         self._ensure_loaded()
         return self._user_skills
 
+    def get_user_commands(self) -> List[CommandInfo]:
+        """Get all user-level commands (slash commands)."""
+        self._ensure_loaded()
+        return self._user_commands
+
     def get_user_rules(self) -> List[RuleInfo]:
         """Get all user-level rules."""
         self._ensure_loaded()
@@ -807,3 +900,212 @@ def scan_comprehensive(
     scanner = ComprehensiveScanner()
     projects = scanner.scan_directory(directory, max_depth, mode)
     return sorted(projects, key=lambda p: p.name.lower())
+
+
+# =============================================================================
+# PROJECT DISCOVERY
+# =============================================================================
+
+# Smart locations to scan for projects (user-relative)
+DISCOVERY_LOCATIONS = [
+    "~",              # Home folder root (scans immediate children)
+    "~/Documents",
+    "~/Developer",
+    "~/Projects",
+    "~/Code",
+    "~/Repos",
+    "~/repos",
+    "~/dev",
+    "~/code",
+    "~/Desktop",      # Some people keep projects here
+    "~/Claude Code Projects",
+    "~/GitHub",
+    "~/Workspace",
+    "~/workspace",
+]
+
+# Claude Code specific markers (more reliable than generic project markers)
+CLAUDE_PROJECT_MARKERS = {
+    ".mcp.json",          # MCP server config
+    ".claude",             # Claude config directory
+    "CLAUDE.md",           # Project instructions
+    "CLAUDE.local.md",     # Local instructions
+}
+
+# Paths to exclude from discovery (not real projects)
+DISCOVERY_EXCLUDE = {
+    ".claude",            # User's Claude config folder
+    "Downloads",          # Downloads folder
+    "Library",            # System library
+    "Applications",       # Applications folder
+    ".Trash",             # Trash
+    ".config",            # Config folder
+    "node_modules",       # Dependencies
+    ".npm",               # NPM cache
+    ".cache",             # Cache folders
+}
+
+
+class ProjectDiscovery:
+    """
+    Fast, efficient discovery of Claude Code projects across the system.
+    Scans smart locations for projects that have Claude Code configuration.
+    """
+
+    def __init__(self):
+        self._discovered: List[str] = []
+        self._scanned_dirs: set = set()
+
+    def discover_projects(
+        self,
+        additional_paths: List[str] = None,
+        max_depth: int = 3,
+        claude_only: bool = True
+    ) -> List[str]:
+        """
+        Discover Claude Code projects across the system.
+
+        Args:
+            additional_paths: Extra paths to scan beyond defaults
+            max_depth: Maximum depth to scan (3 = grandchildren of search roots)
+            claude_only: If True, only return projects with Claude Code config
+                         If False, return all projects with any project marker
+
+        Returns:
+            List of absolute paths to discovered projects
+        """
+        self._discovered = []
+        self._scanned_dirs = set()
+
+        # Collect all paths to scan
+        paths_to_scan = []
+        for loc in DISCOVERY_LOCATIONS:
+            expanded = os.path.expanduser(loc)
+            if os.path.isdir(expanded):
+                paths_to_scan.append(expanded)
+
+        if additional_paths:
+            for path in additional_paths:
+                expanded = os.path.expanduser(path)
+                expanded = os.path.abspath(expanded)
+                if os.path.isdir(expanded):
+                    paths_to_scan.append(expanded)
+
+        # Deduplicate and scan
+        paths_to_scan = list(set(paths_to_scan))
+        for path in paths_to_scan:
+            self._scan_for_projects(path, max_depth, claude_only)
+
+        return sorted(set(self._discovered))
+
+    def _scan_for_projects(
+        self,
+        directory: str,
+        depth: int,
+        claude_only: bool
+    ) -> None:
+        """Recursively scan a directory for projects."""
+        if depth <= 0:
+            return
+
+        # Prevent re-scanning
+        real_path = os.path.realpath(directory)
+        if real_path in self._scanned_dirs:
+            return
+        self._scanned_dirs.add(real_path)
+
+        try:
+            entries = os.listdir(directory)
+        except (PermissionError, OSError):
+            return
+
+        for entry in entries:
+            # Skip hidden (except .claude) and known non-project dirs
+            if entry.startswith('.') and entry not in ['.claude', '.mcp.json']:
+                continue
+            if entry in SKIP_DIRS:
+                continue
+            # Skip excluded discovery paths
+            if entry in DISCOVERY_EXCLUDE:
+                continue
+
+            entry_path = os.path.join(directory, entry)
+            if not os.path.isdir(entry_path):
+                continue
+
+            # Check if this is a project
+            if claude_only:
+                is_project = self._has_claude_config(entry_path)
+            else:
+                is_project = self._is_project_folder(entry_path)
+
+            if is_project:
+                # Double-check it's not an excluded path by full name
+                basename = os.path.basename(entry_path)
+                if basename not in DISCOVERY_EXCLUDE:
+                    self._discovered.append(entry_path)
+            elif depth > 1:
+                # Recurse into non-project directories
+                self._scan_for_projects(entry_path, depth - 1, claude_only)
+
+    def _has_claude_config(self, path: str) -> bool:
+        """Check if a directory has Claude Code configuration."""
+        try:
+            entries = set(os.listdir(path))
+        except (PermissionError, OSError):
+            return False
+
+        # Check for Claude-specific markers
+        if entries & CLAUDE_PROJECT_MARKERS:
+            return True
+
+        # Check for .claude directory with content
+        claude_dir = os.path.join(path, '.claude')
+        if os.path.isdir(claude_dir):
+            try:
+                if os.listdir(claude_dir):  # Has any content
+                    return True
+            except (PermissionError, OSError):
+                pass
+
+        return False
+
+    def _is_project_folder(self, path: str) -> bool:
+        """Check if a folder is any kind of project."""
+        try:
+            entries = set(os.listdir(path))
+        except (PermissionError, OSError):
+            return False
+        return bool(entries & PROJECT_MARKERS)
+
+
+def discover_claude_projects(
+    additional_paths: List[str] = None,
+    max_depth: int = 3
+) -> List[str]:
+    """
+    Convenience function to discover Claude Code projects.
+
+    Args:
+        additional_paths: Extra paths to scan
+        max_depth: Maximum scan depth
+
+    Returns:
+        Sorted list of project paths
+    """
+    discovery = ProjectDiscovery()
+    return discovery.discover_projects(additional_paths, max_depth, claude_only=True)
+
+
+def discover_all_projects(
+    additional_paths: List[str] = None,
+    max_depth: int = 3
+) -> List[str]:
+    """
+    Discover all projects (not just Claude Code projects).
+
+    Returns:
+        Sorted list of project paths
+    """
+    discovery = ProjectDiscovery()
+    return discovery.discover_projects(additional_paths, max_depth, claude_only=False)

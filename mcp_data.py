@@ -337,6 +337,28 @@ class SkillInfo:
 
 
 @dataclass
+class CommandInfo:
+    """Information about a Claude Code slash command.
+
+    Commands are markdown files that define custom slash commands like /commit.
+    Located in ~/.claude/commands/*.md (user) or .claude/commands/*.md (project).
+    """
+    name: str  # Command name (e.g., "commit" for /commit)
+    description: str  # From frontmatter or first line
+    level: Literal["user", "project", "plugin"]
+    path: str  # Full path to command.md
+
+    # Optional fields from frontmatter
+    allowed_tools: List[str] = field(default_factory=list)
+    args: Optional[str] = None  # Argument pattern if command takes args
+
+    @property
+    def short_path(self) -> str:
+        """Get shortened path for display."""
+        return _truncate_path(self.path, 50)
+
+
+@dataclass
 class RuleInfo:
     """Information about a Claude Code rule file."""
     name: str  # Filename without extension
@@ -346,6 +368,9 @@ class RuleInfo:
     # From frontmatter
     paths_glob: Optional[str] = None  # Applies to specific file patterns
     content_preview: str = ""  # First ~200 chars
+
+    # Project context (for project-level rules)
+    project_name: Optional[str] = None
 
     @property
     def short_path(self) -> str:
@@ -366,6 +391,9 @@ class ClaudeMdInfo:
 
     # For subdirectory CLAUDE.md files
     relative_dir: Optional[str] = None  # e.g., "src/api"
+
+    # Project context (for project-level files)
+    project_name: Optional[str] = None
 
     @property
     def filename(self) -> str:
@@ -427,8 +455,9 @@ class EnhancedProjectInfo:
     # MCP servers from all levels
     mcp_servers: List[MCPServerConfig] = field(default_factory=list)
 
-    # Skills, Rules, CLAUDE.md
+    # Skills, Commands, Rules, CLAUDE.md
     skills: List[SkillInfo] = field(default_factory=list)
+    commands: List['CommandInfo'] = field(default_factory=list)
     rules: List[RuleInfo] = field(default_factory=list)
     claude_mds: List[ClaudeMdInfo] = field(default_factory=list)
 
@@ -450,6 +479,11 @@ class EnhancedProjectInfo:
     def skill_count(self) -> int:
         """Number of skills."""
         return len(self.skills)
+
+    @property
+    def command_count(self) -> int:
+        """Number of commands."""
+        return len(self.commands)
 
     @property
     def rule_count(self) -> int:

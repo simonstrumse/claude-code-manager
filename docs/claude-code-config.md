@@ -5,6 +5,35 @@ This document serves as the knowledge base for the MCP Server Manager scanner.
 
 ---
 
+## Quick Concepts Guide
+
+### What Are These Things?
+
+| Component | What It Does | Example |
+|-----------|-------------|---------|
+| **MCP Server** | Connects Claude to external tools/services | Supabase, GitHub, filesystem access |
+| **Skill** | Teaches Claude specialized knowledge | "iOS Development", "Git workflow" |
+| **Command** | Custom slash commands you can invoke | `/commit`, `/review-pr`, `/deploy` |
+| **Rule** | Always-on instructions for Claude | "Use TypeScript", "Follow our style guide" |
+| **CLAUDE.md** | Project-specific context and instructions | Build commands, architecture notes |
+
+### User vs Project Scope
+
+- **User-level** (`~/.claude/...`): Available in ALL your projects
+- **Project-level** (`.claude/...`): Only available in that specific project
+- User items are global defaults, project items are local overrides
+
+### Can Items Be Nested?
+
+| Component | Nesting Support |
+|-----------|----------------|
+| **Skills** | **No** - Must be directly in `skills/skill-name/SKILL.md` |
+| **Commands** | **No** - Must be directly in `commands/*.md` |
+| **Rules** | **Yes** - Can use `rules/**/*.md` for subdirectories |
+| **CLAUDE.md** | **Yes** - Subdirectory CLAUDE.md files are loaded contextually |
+
+---
+
 ## MCP Server Configuration
 
 ### Hierarchy (Highest to Lowest Precedence)
@@ -164,6 +193,67 @@ skill-name/
 └── scripts/
     └── helper.py         # Optional: utility scripts
 ```
+
+---
+
+## Commands (Slash Commands)
+
+Custom slash commands that you can invoke with `/command-name`.
+
+### Hierarchy
+
+| Level | Location |
+|-------|----------|
+| **User** | `~/.claude/commands/*.md` |
+| **Project** | `.claude/commands/*.md` |
+| **Plugin** | `plugin-dir/commands/*.md` |
+
+### Command File Format
+
+Each `.md` file defines one command. Filename becomes the command name.
+
+```yaml
+---
+description: Short description of what this command does
+allowed-tools: Bash, Edit, Read          # Optional: auto-approved tools
+args: <branch-name>                      # Optional: argument pattern
+---
+
+# Command Instructions
+
+Your command instructions in markdown.
+Claude will execute these when user types /command-name.
+
+## Example Usage
+
+Show examples of how to use the command.
+```
+
+### Example: `/commit` command
+
+File: `~/.claude/commands/commit.md`
+
+```yaml
+---
+description: Create a git commit with a well-formatted message
+allowed-tools: Bash, Read
+---
+
+# Git Commit
+
+Create a commit following conventional commit format.
+1. Run `git status` to see changes
+2. Run `git diff --staged` to review
+3. Create commit message following: type(scope): description
+```
+
+### Key Differences from Skills
+
+| Aspect | Command | Skill |
+|--------|---------|-------|
+| **Invocation** | Explicit: `/command-name` | Automatic: Claude decides when |
+| **Purpose** | Run a specific workflow | Provide specialized knowledge |
+| **Structure** | `commands/*.md` flat files | `skills/name/SKILL.md` folders |
 
 ---
 
