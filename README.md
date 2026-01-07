@@ -1,6 +1,6 @@
 # Claude Code Manager
 
-> A terminal UI (TUI) for managing Claude Code configurations across all your projects
+> **See all your MCP servers, skills, commands, rules, and CLAUDE.md files in one place** — across every project on your machine
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
