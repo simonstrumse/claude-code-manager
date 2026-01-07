@@ -25,6 +25,11 @@ from textual.widgets import (
 from rich.text import Text
 
 
+class NonFocusableScroll(ScrollableContainer):
+    """ScrollableContainer that can't receive focus (skipped in tab order)."""
+    can_focus = False
+
+
 class JumpToProject(Message):
     """Message to request jumping to a project in the Projects tab."""
     def __init__(self, project: 'EnhancedProjectInfo') -> None:
@@ -1124,10 +1129,6 @@ class MCPManagerApp(App):
         padding: 0;
     }
 
-    /* Disable focus on ScrollableContainer so Tab goes directly to detail panel */
-    .detail-container {
-        can-focus: false;
-    }
     """
 
     BINDINGS = [
@@ -1248,7 +1249,7 @@ class MCPManagerApp(App):
                 with Horizontal(classes="tab-container"):
                     with Vertical(classes="list-container"):
                         yield DataTable(id="projects-table")
-                    with ScrollableContainer(classes="detail-container"):
+                    with NonFocusableScroll(classes="detail-container"):
                         yield ProjectDetailPanel(id="project-detail")
 
             # MCP Servers Tab
@@ -1256,7 +1257,7 @@ class MCPManagerApp(App):
                 with Horizontal(classes="tab-container"):
                     with Vertical(classes="list-container"):
                         yield DataTable(id="servers-table")
-                    with ScrollableContainer(classes="detail-container"):
+                    with NonFocusableScroll(classes="detail-container"):
                         yield ServerDetailPanel(id="server-detail")
 
             # Skills Tab
@@ -1264,7 +1265,7 @@ class MCPManagerApp(App):
                 with Horizontal(classes="tab-container"):
                     with Vertical(classes="list-container"):
                         yield DataTable(id="skills-table")
-                    with ScrollableContainer(classes="detail-container"):
+                    with NonFocusableScroll(classes="detail-container"):
                         yield SkillDetailPanel(id="skill-detail")
 
             # Commands Tab
@@ -1272,7 +1273,7 @@ class MCPManagerApp(App):
                 with Horizontal(classes="tab-container"):
                     with Vertical(classes="list-container"):
                         yield DataTable(id="commands-table")
-                    with ScrollableContainer(classes="detail-container"):
+                    with NonFocusableScroll(classes="detail-container"):
                         yield CommandDetailPanel(id="command-detail")
 
             # Rules Tab
@@ -1280,7 +1281,7 @@ class MCPManagerApp(App):
                 with Horizontal(classes="tab-container"):
                     with Vertical(classes="list-container"):
                         yield DataTable(id="rules-table")
-                    with ScrollableContainer(classes="detail-container"):
+                    with NonFocusableScroll(classes="detail-container"):
                         yield RuleDetailPanel(id="rule-detail")
 
             # CLAUDE.md Tab
@@ -1288,7 +1289,7 @@ class MCPManagerApp(App):
                 with Horizontal(classes="tab-container"):
                     with Vertical(classes="list-container"):
                         yield DataTable(id="claudemd-table")
-                    with ScrollableContainer(classes="detail-container"):
+                    with NonFocusableScroll(classes="detail-container"):
                         yield ClaudeMdDetailPanel(id="claudemd-detail")
 
         yield Footer()
