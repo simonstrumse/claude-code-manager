@@ -26,7 +26,11 @@ from rich.text import Text
 
 
 class NonFocusableScroll(ScrollableContainer):
-    """ScrollableContainer that can't receive focus (skipped in tab order)."""
+    """ScrollableContainer that can't receive focus (skipped in tab order).
+
+    The detail panels inside ARE focusable for keyboard navigation.
+    Mouse wheel scrolling still works on this container.
+    """
     can_focus = False
 
 
@@ -158,7 +162,8 @@ class StatsBar(Static):
 class ProjectDetailPanel(Static):
     """Detail panel showing selected project's full configuration.
 
-    Focusable with Tab key. When focused, use ↑↓ to select MCP servers, Enter to jump.
+    Focusable with Tab key. When focused, use ↑↓ to select items, Enter to preview/jump.
+    Supports navigation through: MCP Servers, Skills, Rules, CLAUDE.md files.
     """
 
     can_focus = True  # Make this panel focusable
@@ -166,12 +171,35 @@ class ProjectDetailPanel(Static):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.project: Optional[EnhancedProjectInfo] = None
-        self._selected_server_idx: int = 0  # Track which server is selected
+        self._selected_idx: int = 0  # Track which item is selected (flat index)
+        self._items: List[tuple] = []  # List of (type, item) tuples for navigation
 
     def set_project(self, project: Optional[EnhancedProjectInfo]) -> None:
         self.project = project
-        self._selected_server_idx = 0  # Reset selection
-        self.refresh()
+        self._selected_idx = 0  # Reset selection
+        self._build_items_list()
+        # Force a complete refresh and layout recalculation
+        self.refresh(layout=True)
+
+    def _build_items_list(self) -> None:
+        """Build flat list of navigable items."""
+        self._items = []
+        if not self.project:
+            return
+        p = self.project
+        # Add servers
+        servers_list = getattr(p, 'mcp_servers', None) or getattr(p, 'servers', [])
+        for server in servers_list:
+            self._items.append(('server', server))
+        # Add skills
+        for skill in getattr(p, 'skills', []):
+            self._items.append(('skill', skill))
+        # Add rules
+        for rule in getattr(p, 'rules', []):
+            self._items.append(('rule', rule))
+        # Add CLAUDE.md files
+        for claude_md in getattr(p, 'claude_mds', []):
+            self._items.append(('claude_md', claude_md))
 
     def on_focus(self) -> None:
         """When panel receives focus, refresh to show selection highlight."""
@@ -183,27 +211,47 @@ class ProjectDetailPanel(Static):
 
     def on_key(self, event) -> None:
         """Handle keyboard navigation within the detail panel."""
-        # Get servers list - EnhancedProjectInfo has mcp_servers, ProjectInfo has servers
-        servers_list = getattr(self.project, 'mcp_servers', None) or getattr(self.project, 'servers', []) if self.project else []
-        if not servers_list:
+        if not self._items:
             return
 
-        max_idx = len(servers_list) - 1
+        max_idx = len(self._items) - 1
 
         if event.key == "up":
-            self._selected_server_idx = max(0, self._selected_server_idx - 1)
+            self._selected_idx = max(0, self._selected_idx - 1)
             self.refresh()
             event.stop()
         elif event.key == "down":
-            self._selected_server_idx = min(max_idx, self._selected_server_idx + 1)
+            self._selected_idx = min(max_idx, self._selected_idx + 1)
             self.refresh()
             event.stop()
         elif event.key == "enter":
-            # Jump to the selected server
-            if 0 <= self._selected_server_idx < len(servers_list):
-                server = servers_list[self._selected_server_idx]
-                self.post_message(JumpToServer(server.name))
+            if 0 <= self._selected_idx < len(self._items):
+                item_type, item = self._items[self._selected_idx]
+                if item_type == 'server':
+                    self.post_message(JumpToServer(item.name))
+                elif item_type == 'skill':
+                    self.app.push_screen(FilePreviewModal(
+                        title=f"Skill: {item.name}",
+                        file_path=item.path
+                    ))
+                elif item_type == 'rule':
+                    self.app.push_screen(FilePreviewModal(
+                        title=f"Rule: {item.name}",
+                        file_path=item.path
+                    ))
+                elif item_type == 'claude_md':
+                    self.app.push_screen(FilePreviewModal(
+                        title=f"CLAUDE.md: {item.filename}",
+                        file_path=item.path
+                    ))
             event.stop()
+
+    def _is_selected(self, item_type: str, item) -> bool:
+        """Check if an item is currently selected."""
+        if not self.has_focus or self._selected_idx >= len(self._items):
+            return False
+        sel_type, sel_item = self._items[self._selected_idx]
+        return sel_type == item_type and sel_item is item
 
     def render(self) -> Text:
         if not self.project:
@@ -211,78 +259,57 @@ class ProjectDetailPanel(Static):
 
         lines = []
         p = self.project
+        is_focused = self.has_focus
 
         # Header
         git_badge = "[green]● git[/]" if p.has_git else "[dim]○ no git[/]"
         mcp_badge = "[green]● mcp[/]" if p.has_mcp_config else "[yellow]○ global[/]"
         lines.append(f"[bold cyan]{self.app._redact(p.name)}[/]  {git_badge}  {mcp_badge}")
         lines.append(f"[dim]{self.app._redact_path(p.path)}[/]")
+        if is_focused:
+            lines.append("[cyan]↑↓ navigate • Enter preview/jump[/]")
         lines.append("")
 
-        # MCP Servers - interactive when focused
-        # Get servers list - EnhancedProjectInfo has mcp_servers, ProjectInfo has servers
+        # MCP Servers
         servers_list = getattr(p, 'mcp_servers', None) or getattr(p, 'servers', [])
-        is_focused = self.has_focus
         if servers_list:
-            if is_focused:
-                lines.append(f"[bold]MCP Servers ({len(servers_list)}):[/] [cyan]↑↓ select, Enter to jump[/]")
-            else:
-                lines.append(f"[bold]MCP Servers ({len(servers_list)}):[/] [dim](Tab to navigate, 's' to jump)[/]")
-
-            for idx, server in enumerate(servers_list):
-                # MCPServerConfig has level, ServerDetail doesn't
+            lines.append(f"[bold]MCP Servers ({len(servers_list)}):[/]")
+            for server in servers_list:
                 level = getattr(server, 'level', 'project')
                 level_color = {"enterprise": "red", "user": "yellow", "project": "green", "local": "cyan"}.get(level, "white")
+                name = self.app._redact(server.name)
 
-                # Highlight selected server when focused
-                if is_focused and idx == self._selected_server_idx:
-                    lines.append(f"  [reverse] [bold yellow]{server.name}[/]  [dim]{server.server_type}[/]  [{level_color}]{level}[/] [/reverse]")
+                if self._is_selected('server', server):
+                    lines.append(f"  [reverse] [bold yellow]{name}[/] {server.server_type} [{level_color}]{level}[/] [/reverse]")
                 else:
-                    lines.append(f"  [bold yellow]{server.name}[/]  [dim]{server.server_type}[/]  [{level_color}]{level}[/]")
-
-                if server.command:
-                    lines.append(f"    [dim]command:[/] {server.command}")
-                if server.api_key_preview:
-                    lines.append(f"    [dim]key:[/] {server.api_key_preview}")
+                    lines.append(f"  [bold yellow]{name}[/] [dim]{server.server_type}[/] [{level_color}]{level}[/]")
             lines.append("")
 
-        # Skills (show project-level first, then user-level)
-        # Use getattr() because ProjectInfo doesn't have skills, only EnhancedProjectInfo does
+        # Skills
         skills_list = getattr(p, 'skills', [])
         if skills_list:
-            project_skills = [s for s in skills_list if s.level == "project"]
-            user_skills = [s for s in skills_list if s.level != "project"]
-
             lines.append(f"[bold]Skills ({len(skills_list)}):[/]")
-
-            # Show all project skills first
-            for skill in project_skills:
-                lines.append(f"  [magenta]{skill.name}[/] [green]project[/]")
-
-            # Then show user skills (limit to keep it readable)
-            shown_user = 0
-            for skill in user_skills[:8]:
-                lines.append(f"  [magenta]{skill.name}[/] [yellow]personal[/]")
-                shown_user += 1
-
-            remaining = len(user_skills) - shown_user
-            if remaining > 0:
-                lines.append(f"  [dim]... +{remaining} more personal skills[/]")
+            for skill in skills_list:
+                level_color = {"project": "green", "personal": "yellow"}.get(skill.level, "white")
+                if self._is_selected('skill', skill):
+                    lines.append(f"  [reverse] [magenta]{skill.name}[/] [{level_color}]{skill.level}[/] [/reverse]")
+                else:
+                    lines.append(f"  [magenta]{skill.name}[/] [{level_color}]{skill.level}[/]")
             lines.append("")
 
         # Rules
-        # Use getattr() because ProjectInfo doesn't have rules, only EnhancedProjectInfo does
         rules_list = getattr(p, 'rules', [])
         if rules_list:
             lines.append(f"[bold]Rules ({len(rules_list)}):[/]")
-            for rule in rules_list:  # Show all rules (usually not many)
-                scope = f" [dim]({rule.paths_glob})[/]" if rule.paths_glob else ""
+            for rule in rules_list:
                 level_color = {"user": "yellow", "project": "green"}.get(rule.level, "white")
-                lines.append(f"  [blue]{rule.name}[/] [{level_color}]{rule.level}[/]{scope}")
+                if self._is_selected('rule', rule):
+                    lines.append(f"  [reverse] [blue]{rule.name}[/] [{level_color}]{rule.level}[/] [/reverse]")
+                else:
+                    lines.append(f"  [blue]{rule.name}[/] [{level_color}]{rule.level}[/]")
             lines.append("")
 
         # CLAUDE.md files
-        # Use getattr() because ProjectInfo doesn't have claude_mds, only EnhancedProjectInfo does
         claude_mds_list = getattr(p, 'claude_mds', [])
         if claude_mds_list:
             lines.append(f"[bold]CLAUDE.md ({len(claude_mds_list)}):[/]")
@@ -299,7 +326,10 @@ class ProjectDetailPanel(Static):
                 filename = os.path.basename(claude_md.path)
                 if claude_md.level == "subdirectory" and hasattr(claude_md, 'relative_dir'):
                     filename = f"{claude_md.relative_dir}/CLAUDE.md"
-                lines.append(f"  {imports_badge} [{level_color}]{claude_md.level}[/] [dim]{filename}[/]")
+                if self._is_selected('claude_md', claude_md):
+                    lines.append(f"  [reverse] {imports_badge} [{level_color}]{claude_md.level}[/] {filename} [/reverse]")
+                else:
+                    lines.append(f"  {imports_badge} [{level_color}]{claude_md.level}[/] [dim]{filename}[/]")
             lines.append("")
 
         if not any([servers_list, skills_list, rules_list, claude_mds_list]):
@@ -1107,6 +1137,7 @@ class MCPManagerApp(App):
         height: 1fr;
         border-left: solid $primary;
         padding: 1 2;
+        overflow-y: auto;
     }
 
     /* Visual feedback when detail panel is focused */
@@ -1615,6 +1646,80 @@ class MCPManagerApp(App):
                     detail.set_claude_md(claude_md)
                     return
 
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle Enter key press on tables - opens file preview for previewable content."""
+        if not event.row_key:
+            return
+
+        table_id = event.data_table.id
+        key = event.row_key.value
+
+        if table_id == "skills-table":
+            # key format: "level:name"
+            for p in self.projects:
+                for skill in p.skills:
+                    if f"{skill.level}:{skill.name}" == key:
+                        self.push_screen(FilePreviewModal(
+                            title=f"Skill: {skill.name}",
+                            file_path=skill.path
+                        ))
+                        return
+            # Check user skills too
+            for skill in self.user_skills:
+                if f"{skill.level}:{skill.name}" == key:
+                    self.push_screen(FilePreviewModal(
+                        title=f"Skill: {skill.name}",
+                        file_path=skill.path
+                    ))
+                    return
+
+        elif table_id == "commands-table":
+            # key format: "level:name"
+            for p in self.projects:
+                for cmd in p.commands:
+                    if f"{cmd.level}:{cmd.name}" == key:
+                        self.push_screen(FilePreviewModal(
+                            title=f"Command: /{cmd.name}",
+                            file_path=cmd.path
+                        ))
+                        return
+            # Check user commands too
+            for cmd in self.user_commands:
+                if f"{cmd.level}:{cmd.name}" == key:
+                    self.push_screen(FilePreviewModal(
+                        title=f"Command: /{cmd.name}",
+                        file_path=cmd.path
+                    ))
+                    return
+
+        elif table_id == "rules-table":
+            for p in self.projects:
+                for rule in p.rules:
+                    if f"{rule.level}:{rule.name}" == key:
+                        self.push_screen(FilePreviewModal(
+                            title=f"Rule: {rule.name}",
+                            file_path=rule.path
+                        ))
+                        return
+            # Check user rules too
+            for rule in self.user_rules:
+                if f"{rule.level}:{rule.name}" == key:
+                    self.push_screen(FilePreviewModal(
+                        title=f"Rule: {rule.name}",
+                        file_path=rule.path
+                    ))
+                    return
+
+        elif table_id == "claudemd-table":
+            for claude_md in self.all_claude_mds:
+                if claude_md.path == key:
+                    filename = os.path.basename(claude_md.path)
+                    self.push_screen(FilePreviewModal(
+                        title=f"CLAUDE.md: {filename}",
+                        file_path=claude_md.path
+                    ))
+                    return
+
     def action_refresh(self) -> None:
         """Refresh the scan."""
         self._initial_scan()
@@ -1698,40 +1803,61 @@ class MCPManagerApp(App):
         tabbed.active = tab_id
 
     def action_open_project(self) -> None:
-        """Open the selected project in Finder (macOS)."""
+        """Open the selected item in Finder (macOS).
+
+        For projects: opens the project folder
+        For files (skills, commands, rules, CLAUDE.md): reveals the file in Finder
+        """
         import subprocess
         tabbed = self.query_one("#main-content", TabbedContent)
         current_tab = tabbed.active
 
-        # Get the project path based on current tab
-        project_path = None
+        # Get path and whether it's a file (to reveal) or directory (to open)
+        path = None
+        reveal_file = False  # If True, use 'open -R' to reveal file in Finder
+
         if current_tab == "tab-projects":
             table = self.query_one("#projects-table", DataTable)
             cursor_row = table.cursor_row
             if cursor_row is not None and 0 <= cursor_row < len(self.projects):
-                project_path = self.projects[cursor_row].path
+                path = self.projects[cursor_row].path
+        elif current_tab == "tab-servers":
+            # For servers, open the project of the first usage
+            detail = self.query_one("#server-detail", ServerDetailPanel)
+            if detail.server_usage and detail.server_usage.projects:
+                path = detail.server_usage.projects[0].path
         elif current_tab == "tab-skills":
             detail = self.query_one("#skill-detail", SkillDetailPanel)
             if detail.skill:
-                project_path = os.path.dirname(os.path.dirname(detail.skill.path))
+                path = detail.skill.path
+                reveal_file = True
         elif current_tab == "tab-commands":
             detail = self.query_one("#command-detail", CommandDetailPanel)
             if detail.command:
-                project_path = os.path.dirname(os.path.dirname(detail.command.path))
+                path = detail.command.path
+                reveal_file = True
         elif current_tab == "tab-rules":
             detail = self.query_one("#rule-detail", RuleDetailPanel)
             if detail.rule:
-                project_path = os.path.dirname(detail.rule.path)
+                path = detail.rule.path
+                reveal_file = True
         elif current_tab == "tab-claudemd":
             detail = self.query_one("#claudemd-detail", ClaudeMdDetailPanel)
             if detail.claude_md:
-                project_path = os.path.dirname(detail.claude_md.path)
+                path = detail.claude_md.path
+                reveal_file = True
 
-        if project_path and os.path.exists(project_path):
-            subprocess.run(["open", project_path])
-            self.notify(f"Opened in Finder: {os.path.basename(project_path)}")
+        if path and os.path.exists(path):
+            if reveal_file:
+                # Reveal file in Finder (selects it)
+                subprocess.run(["open", "-R", path])
+                self.notify(f"Revealed: {os.path.basename(path)}")
+            else:
+                # Open directory
+                subprocess.run(["open", path])
+                self.notify(f"Opened: {os.path.basename(path)}")
         else:
-            self.notify("No project selected", severity="warning")
+            self.notify("No item selected", severity="warning")
 
     def action_discover(self) -> None:
         """Discover Claude Code projects across the system."""
@@ -1841,7 +1967,17 @@ def run_tui(directory: str) -> None:
     app.run()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point for CLI command (ccmanager).
+
+    Usage:
+        ccmanager ~/Projects     # Scan a projects folder
+        ccmanager               # Scan current directory
+    """
     import sys
     directory = sys.argv[1] if len(sys.argv) > 1 else "."
     run_tui(directory)
+
+
+if __name__ == "__main__":
+    main()

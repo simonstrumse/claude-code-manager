@@ -3,15 +3,20 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mcp-server-manager"
+name = "claude-code-manager"
 version = "2.0.0"
-description = "A CLI tool to manage MCP servers in Claude Code with interactive TUI"
+description = "Terminal UI for managing Claude Code configurations across all your projects"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 dependencies = [
     "textual>=0.47.0",
+    "rich>=13.0.0",
 ]
+
+[project.scripts]
+ccmanager = "mcp_tui:main"
+claude-code-manager = "mcp_tui:main"
 
 [tool.black]
 line-length = 100

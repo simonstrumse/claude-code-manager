@@ -1,75 +1,53 @@
 # Claude Code Manager
 
-A terminal UI (TUI) for managing Claude Code configurations across all your projects. See MCP servers, skills, commands, rules, and CLAUDE.md files in one unified view.
+> A terminal UI (TUI) for managing Claude Code configurations across all your projects
 
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Compatible-orange)](https://claude.ai/code)
+[![Built with Textual](https://img.shields.io/badge/Built%20with-Textual-5A5A5A)](https://textual.textualize.io/)
 
-```
-  C L A U D E   C O D E   M A N A G E R
-```
+[Quick Start](#quick-start) | [Features](#features) | [Usage](#usage) | [Configuration](#what-it-scans) | [Contributing](#contributing)
 
-## Features
+---
 
-- **Multi-Project Scanning** - Scan a folder of projects and see all configurations at a glance
-- **6 Configuration Tabs** - Projects, MCP Servers, Skills, Commands, Rules, CLAUDE.md
-- **Content Preview** - Press Enter on any skill, command, rule, or CLAUDE.md to view full content
-- **Cross-Navigation** - Jump between projects and their MCP servers with `g` and `s` keys
-- **Project Discovery** - Find Claude Code projects scattered across your system
-- **Usage Analytics** - See which MCP servers are used most across your projects
+![Claude Code Manager TUI](screenshots/interactive-mode.png)
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.8+
-- [Textual](https://textual.textualize.io/) (installed automatically)
-
-### Installation
-
 ```bash
-# Clone the repository
+# Install from source
 git clone https://github.com/simonstrumse/claude-code-manager.git
 cd claude-code-manager
+pip install -e .
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run!
-python mcp_tui.py ~/path/to/your/projects
+# Run it
+ccmanager ~/Projects
 ```
 
-### One-Line Install (for Claude Code)
+That's it! The TUI will scan your projects folder and display all Claude Code configurations.
 
-You can ask Claude Code to install this for you. Paste this into a Claude Code conversation:
+---
 
-```
-Please help me install the Claude Code Manager TUI tool.
+## Features
 
-1. First, review the repository at https://github.com/simonstrumse/claude-code-manager
-   to make sure it looks safe and legitimate
-2. If it looks good, clone it to ~/tools/claude-code-manager
-3. Set up a Python virtual environment and install dependencies
-4. Create a shell alias so I can run it easily
+- **Multi-Project Scanning** — Scan an entire folder of projects and see all configurations at a glance
+- **6 Configuration Tabs** — Projects, MCP Servers, Skills, Commands, Rules, CLAUDE.md
+- **Content Preview** — Press Enter to view full content of any skill, command, rule, or CLAUDE.md
+- **Cross-Navigation** — Jump between projects and their MCP servers with `g` and `s` keys
+- **Project Discovery** — Find Claude Code projects scattered across your system
+- **Usage Analytics** — See which MCP servers are used most across your projects
+- **Privacy Mode** — Toggle `p` to redact project names for screenshots
 
-Note: Always review code from the internet before running it on your machine!
-```
+---
 
 ## Usage
 
 ### Launch the TUI
 
 ```bash
-# Scan a projects folder
-python mcp_tui.py ~/Projects
-
-# Or scan multiple specific projects
-python mcp_tui.py ~/Project1 ~/Project2
+ccmanager ~/Projects      # Scan a projects folder
+ccmanager                 # Scan current directory
 ```
 
 ### Keyboard Navigation
@@ -79,35 +57,39 @@ python mcp_tui.py ~/Project1 ~/Project2
 | `1-6` | Switch tabs (1=Projects, 2=MCP, 3=Skills, 4=Commands, 5=Rules, 6=CLAUDE.md) |
 | `↑↓` | Navigate list items |
 | `Tab` | Move focus: list → detail panel |
-| `Enter` | Preview full content (skills, commands, rules, CLAUDE.md) |
+| `Enter` | Preview full content |
+| `g` | Go to project's MCP servers |
+| `s` | Show server's projects |
 | `o` | Open in Finder (macOS) |
 | `d` | Discover projects across system |
+| `p` | Toggle privacy mode |
 | `r` | Refresh scan |
 | `?` | Show help |
 | `q` | Quit |
-| `Esc` | Close preview / cancel |
 
 ### Tabs Overview
 
-1. **Projects** - All scanned projects with config counts
-2. **MCP** - All MCP servers ranked by usage
-3. **Skills** - User and project skills
-4. **Commands** - Slash commands (/commit, etc.)
-5. **Rules** - Always-on instruction files
-6. **CLAUDE.md** - Project documentation files
+| Tab | What it shows |
+|-----|---------------|
+| **Projects** | All scanned projects with config counts |
+| **MCP** | All MCP servers ranked by usage |
+| **Skills** | User and project skills |
+| **Commands** | Slash commands (/commit, etc.) |
+| **Rules** | Always-on instruction files |
+| **CLAUDE.md** | Project documentation files |
+
+---
 
 ## What It Scans
-
-### Configuration Hierarchy
 
 The tool understands Claude Code's configuration precedence:
 
 | Level | Location | Priority |
 |-------|----------|----------|
 | Enterprise | `/Library/Application Support/ClaudeCode/` | Highest |
-| Local | `~/.claude.json` -> `projects[path]` | 2nd |
+| Local | `~/.claude.json` → `projects[path]` | 2nd |
 | Project | `.mcp.json` | 3rd |
-| User | `~/.claude.json` -> `mcpServers` | Lowest |
+| User | `~/.claude.json` → `mcpServers` | Lowest |
 
 ### Scanned Locations
 
@@ -117,53 +99,7 @@ The tool understands Claude Code's configuration precedence:
 - **Rules**: `~/.claude/rules/**/*.md` and `.claude/rules/**/*.md`
 - **CLAUDE.md**: Root, `.claude/`, subdirectories, local variants
 
-## Contributing
-
-Contributions are welcome! This is my first maintained open source project, so please be patient and constructive.
-
-### Development Setup
-
-```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/claude-code-manager.git
-cd claude-code-manager
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install in development mode
-pip install -e .
-pip install -r requirements-dev.txt
-
-# Run the TUI
-python mcp_tui.py ~/Projects
-```
-
-### Guidelines
-
-1. **Be respectful** - This is a learning project
-2. **Test your changes** - Make sure the TUI runs without crashing
-3. **Follow existing patterns** - Look at how similar features are implemented
-4. **Document changes** - Update CHANGELOG.md for significant changes
-5. **Keep it simple** - Prefer readable code over clever code
-
-### Pull Request Process
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes
-4. Test thoroughly: `python mcp_tui.py ~/Projects`
-5. Commit with clear messages
-6. Push to your fork
-7. Open a Pull Request with a description of your changes
-
-### Code Style
-
-- Use Python type hints where helpful
-- Follow existing naming conventions
-- Keep functions focused and small
-- Add comments for non-obvious logic
+---
 
 ## Project Structure
 
@@ -174,39 +110,71 @@ claude-code-manager/
 ├── mcp_data.py         # Data models and classes
 ├── mcp_config.py       # User settings management
 ├── mcp_operations.py   # Project move/consolidate operations
-├── mcp_manager.py      # Legacy CLI tool
 ├── requirements.txt    # Python dependencies
-├── CHANGELOG.md        # Development history
-└── docs/
-    └── claude-code-config.md  # Configuration reference
+└── CHANGELOG.md        # Development history
 ```
+
+---
+
+## Contributing
+
+Contributions welcome! This is a learning project, so please be patient and constructive.
+
+### Development Setup
+
+```bash
+git clone https://github.com/YOUR_USERNAME/claude-code-manager.git
+cd claude-code-manager
+python3 -m venv venv && source venv/activate
+pip install -e .
+```
+
+### Guidelines
+
+1. **Test your changes** — Make sure the TUI runs without crashing
+2. **Follow existing patterns** — Look at how similar features are implemented
+3. **Document changes** — Update CHANGELOG.md for significant changes
+4. **Keep it simple** — Prefer readable code over clever code
+
+---
 
 ## Troubleshooting
 
-### "No projects found"
+<details>
+<summary><strong>"No projects found"</strong></summary>
+
 - Make sure you're pointing to a directory that contains Claude Code projects
 - Projects need `.git`, `.mcp.json`, or `.claude/` folder to be detected
+</details>
 
-### TUI looks broken
+<details>
+<summary><strong>TUI looks broken</strong></summary>
+
 - Make sure your terminal supports Unicode
 - Try a different terminal (iTerm2, Alacritty, Windows Terminal)
 - Ensure terminal is at least 100 columns wide
+</details>
 
-### Preview not opening
+<details>
+<summary><strong>Preview not opening</strong></summary>
+
 - Tab to focus the detail panel first
 - Then press Enter
 - Press Escape or 'q' to close the preview
+</details>
+
+---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
+MIT License — see [LICENSE](LICENSE) file.
 
 ## Acknowledgments
 
-- Built with [Textual](https://textual.textualize.io/) - the amazing Python TUI framework
+- Built with [Textual](https://textual.textualize.io/) — the amazing Python TUI framework
 - Inspired by the need to understand Claude Code's configuration system
 - Thanks to Anthropic for creating Claude Code
 
 ---
 
-**Safe Computing Reminder**: Always review code from the internet before running it. This tool only reads your configuration files - it doesn't modify anything without your explicit action (like project moves).
+**Safe Computing Reminder**: Always review code from the internet before running it. This tool only reads your configuration files — it doesn't modify anything without your explicit action.

@@ -4,6 +4,85 @@ This changelog tracks implementation decisions, bug fixes, and feature additions
 
 ---
 
+## 2026-01-07 - README Enhancement & GitHub Optimization
+
+### Features Added
+- **README Overhaul** — Restructured following best practices from popular repos
+  - Added navigation links at top for quick section jumping
+  - Added screenshot preview (uses existing `screenshots/interactive-mode.png`)
+  - Simplified Quick Start to 4 lines of copy-paste commands
+  - Added `Built with Textual` badge
+  - Moved Troubleshooting to collapsible `<details>` sections
+  - Cleaned up section organization with horizontal rules
+  - **Files**: `README.md`
+
+- **Open in Finder Enhancement** — Now reveals files in their actual subdirectory
+  - Uses `open -R <file>` to reveal and select files in Finder
+  - Previously only opened project root folder
+  - **Files**: `mcp_tui.py` `action_open_project()`
+
+### Bug Fixes
+- **Detail Panel Content Clipping** — Skills/servers were cut off without scrolling
+  - Root cause: `Static` widget in `ScrollableContainer` needed `refresh(layout=True)` call
+  - Added layout refresh when project changes via `set_project()`
+  - **Files**: `mcp_tui.py` `ProjectDetailPanel.set_project()`
+
+### Technical Insights
+- Shields.io badges should link to relevant resources (LICENSE file, Python.org, etc.)
+- GitHub README best practices: tagline, badges, screenshot, quick start, then details
+- Collapsible `<details>` sections reduce visual clutter while preserving info
+- `open -R` on macOS reveals and selects a file in Finder (vs `open` which opens folder)
+
+---
+
+## 2026-01-07 (Late Night) - ProjectDetailPanel Navigation & Direct Table Preview
+
+### Features Added
+- **ProjectDetailPanel Multi-Item Navigation** — Enhanced to navigate through all config items
+  - Supports servers, skills, rules, and CLAUDE.md files in a flat list
+  - Use ↑↓ to navigate when panel is focused
+  - Enter on server → jumps to MCP tab
+  - Enter on skill/rule/claude_md → opens FilePreviewModal
+  - `_build_items_list()` aggregates all items into navigable list
+  - `_is_selected()` helper for highlight state
+  - **Files**: `mcp_tui.py` `ProjectDetailPanel` class
+
+- **Direct Table Preview** — Press Enter directly in tables to open file preview
+  - Skills table: Enter opens SKILL.md preview
+  - Commands table: Enter opens command preview
+  - Rules table: Enter opens rule preview
+  - CLAUDE.md table: Enter opens CLAUDE.md preview
+  - No longer need to Tab to detail panel first
+  - **Implementation**: Added `on_data_table_row_selected()` handler
+  - **Files**: `mcp_tui.py`
+
+- **CLI Command** — Install with `pip install -e .` and run `ccmanager ~/Projects`
+  - Added `main()` entry point function
+  - Added `[project.scripts]` to `pyproject.toml`
+  - Two commands: `ccmanager` and `claude-code-manager`
+  - **Files**: `mcp_tui.py`, `pyproject.toml`, `README.md`
+
+### Bug Fixes
+- **Detail Panel Scrolling** — Content was being cut off without scrollbar
+  - Changed `NonFocusableScroll` to extend `VerticalScroll` instead of `ScrollableContainer`
+  - Added `height: auto` CSS to all detail panels
+  - Added `overflow-y: auto` to `.detail-container`
+  - **Root cause**: `Static` widgets need proper container for scrolling
+  - **Files**: `mcp_tui.py` CSS and container class
+
+- **CLAUDE.md Selection Highlight Missing** — Selection wasn't visible in ProjectDetailPanel
+  - Added `_is_selected('claude_md', claude_md)` check with reverse highlighting
+  - **Files**: `mcp_tui.py` `ProjectDetailPanel.render()`
+
+### Technical Insights
+- DataTable uses `RowHighlighted` event for cursor movement (updates detail panel)
+- DataTable uses `RowSelected` event for Enter key press (now opens preview directly)
+- This two-event model enables both passive browsing and active selection
+- `VerticalScroll` provides better automatic scrolling than `ScrollableContainer` for text content
+- `Static` widgets with `height: auto` grow to fit content, enabling proper scrolling
+
+---
+
 ## 2026-01-07 (Night) - Compact Headers, Commands Tab & Type Mismatch Fixes
 
 ### Bug Fixes
