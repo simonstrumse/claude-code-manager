@@ -1973,10 +1973,56 @@ def main() -> None:
     Usage:
         ccmanager ~/Projects     # Scan a projects folder
         ccmanager               # Scan current directory
+        ccmanager --debug       # Show what paths are being scanned
     """
     import sys
-    directory = sys.argv[1] if len(sys.argv) > 1 else "."
-    run_tui(directory)
+    from pathlib import Path
+
+    args = sys.argv[1:]
+
+    # Handle --debug flag
+    if '--debug' in args:
+        args.remove('--debug')
+        directory = args[0] if args else "."
+
+        print("=== Claude Code Manager Debug ===\n")
+        print("Checking paths:\n")
+
+        # User paths
+        home = Path.home()
+        paths_to_check = [
+            (home / '.claude.json', 'User MCP servers'),
+            (home / '.claude' / 'skills', 'User skills'),
+            (home / '.claude' / 'commands', 'User commands'),
+            (home / '.claude' / 'rules', 'User rules'),
+            (home / '.claude' / 'CLAUDE.md', 'User CLAUDE.md'),
+        ]
+
+        for path, desc in paths_to_check:
+            exists = "✓" if path.exists() else "✗"
+            print(f"  {exists} {path} ({desc})")
+
+        print(f"\nScanning directory: {os.path.abspath(directory)}\n")
+
+        # Check if ~/.claude.json has mcpServers
+        claude_json = home / '.claude.json'
+        if claude_json.exists():
+            import json
+            try:
+                with open(claude_json) as f:
+                    data = json.load(f)
+                servers = data.get('mcpServers', {})
+                print(f"Found {len(servers)} MCP servers in ~/.claude.json:")
+                for name in servers:
+                    print(f"    - {name}")
+            except Exception as e:
+                print(f"Error reading ~/.claude.json: {e}")
+
+        print("\nStarting TUI...\n")
+        run_tui(directory)
+    else:
+        directory = args[0] if args else "."
+        run_tui(directory)
 
 
 if __name__ == "__main__":

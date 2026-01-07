@@ -168,6 +168,25 @@ pip install -e .
 </details>
 
 <details>
+<summary><strong>Not finding my MCP servers or skills</strong></summary>
+
+Run with `--debug` to see what paths are being checked:
+
+```bash
+ccmanager --debug ~/Projects
+```
+
+The scanner looks for:
+- **MCP servers**: `~/.claude.json` → `mcpServers` key (camelCase!)
+- **Skills**: `~/.claude/skills/*/SKILL.md` (each skill needs its own folder)
+- **Project MCP**: `.mcp.json` → `mcpServers` key in each project
+
+Common issues:
+- Wrong key name (`mcp_servers` vs `mcpServers`)
+- Skills missing `SKILL.md` file inside the folder
+</details>
+
+<details>
 <summary><strong>TUI looks broken</strong></summary>
 
 - Make sure your terminal supports Unicode
