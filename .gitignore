@@ -52,3 +52,8 @@ test_configs/
 .claude
 CLAUDE.MD
 .cursor
+
+# Secrets (NEVER commit)
+.pypi-token
+.env
+*.secret
